@@ -1,0 +1,304 @@
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import { useAuthStore } from '../store/authStore'
+import { Plus, Trash2, Eye, Edit, Home, MapPin, Image, X } from 'lucide-react'
+import Header from '../components/Header'
+import MobileNav from '../components/MobileNav'
+
+export default function MyGardens() {
+  const { user } = useAuthStore()
+  const navigate = useNavigate()
+  const [gardens, setGardens] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [newGarden, setNewGarden] = useState({ name: '', location: '' })
+  const [photo, setPhoto] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState(null)
+  const [uploading, setUploading] = useState(false)
+
+  useEffect(() => { loadGardens() }, [])
+
+  async function loadGardens() {
+    const { data } = await supabase
+      .from('layouts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    if (data) setGardens(data)
+    setLoading(false)
+  }
+
+  function handlePhotoSelect(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    
+    setPhoto(file)
+    const reader = new FileReader()
+    reader.onload = (e) => setPhotoPreview(e.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  async function uploadPhoto(file) {
+    if (!file) return null
+    
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${user.id}-${Date.now()}.${fileExt}`
+    
+    const { data, error } = await supabase.storage
+      .from('garden-photos')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false
+      })
+    
+    if (error) {
+      console.error('Ошибка загрузки фото:', error)
+      return null
+    }
+    
+    const { data: urlData } = supabase.storage
+      .from('garden-photos')
+      .getPublicUrl(data.path)
+    
+    return urlData.publicUrl
+  }
+
+  async function createGarden() {
+    if (!newGarden.name.trim()) return alert('Введите название')
+    
+    setUploading(true)
+    
+    let imageUrl = null
+    if (photo) {
+      imageUrl = await uploadPhoto(photo)
+    }
+    
+    const { data, error } = await supabase
+      .from('layouts')
+      .insert({
+        user_id: user.id,
+        name: newGarden.name,
+        location: newGarden.location,
+        image_url: imageUrl,
+        width: 3000,
+        height: 2000
+      })
+      .select()
+      .single()
+    
+    setUploading(false)
+    
+    if (!error && data) {
+      setGardens([data, ...gardens])
+      setShowModal(false)
+      setNewGarden({ name: '', location: '' })
+      setPhoto(null)
+      setPhotoPreview(null)
+      navigate(`/garden/${data.id}/edit`)
+    } else {
+      alert('Ошибка при создании: ' + error?.message)
+    }
+  }
+
+  async function deleteGarden(id) {
+    if (!confirm('Удалить участок, все зоны и растения на нём?')) return
+    await supabase.from('layouts').delete().eq('id', id)
+    setGardens(gardens.filter(g => g.id !== id))
+  }
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
+      <Header />
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Мои участки</h1>
+            <p className="text-sm text-gray-500 mt-1">{gardens.length} участков</p>
+          </div>
+          <button 
+            onClick={() => setShowModal(true)} 
+            className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-2.5 rounded-xl hover:from-green-700 hover:to-emerald-700 text-sm font-medium transition-all shadow-md shadow-green-500/20"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:block">Добавить участок</span>
+          </button>
+        </div>
+
+        {gardens.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+              <Home className="w-10 h-10 text-green-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-700 mb-2">У вас пока нет участков</h3>
+            <p className="text-gray-500 mb-6">Создайте свой первый участок, чтобы начать планировать</p>
+            <button 
+              onClick={() => setShowModal(true)} 
+              className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-2.5 rounded-xl hover:from-green-700 hover:to-emerald-700 font-medium shadow-md shadow-green-500/20"
+            >
+              Добавить участок
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {gardens.map(garden => (
+              <div 
+                key={garden.id} 
+                className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group"
+              >
+                {/* Фото участка */}
+                <div className="aspect-[4/3] relative overflow-hidden">
+                  {garden.image_url ? (
+                    <img 
+                      src={garden.image_url} 
+                      alt={garden.name} 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-green-200 via-emerald-300 to-teal-400 flex items-center justify-center">
+                      <Home className="w-20 h-20 text-white/30 group-hover:scale-110 transition-transform" />
+                    </div>
+                  )}
+                  
+                  {/* Адрес */}
+                  {garden.location && (
+                    <div className="absolute top-3 left-3 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-medium text-gray-700 shadow-sm">
+                      <MapPin className="w-3 h-3 text-green-600" />
+                      {garden.location}
+                    </div>
+                  )}
+                  
+                  {/* Затемнение при наведении */}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                </div>
+                
+                {/* Информация */}
+                <div className="p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3 truncate">{garden.name}</h3>
+                  
+                  <div className="flex gap-2">
+                    <Link 
+                      to={`/garden/${garden.id}`} 
+                      className="flex-1 flex items-center justify-center gap-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-3 py-2.5 rounded-xl hover:from-green-700 hover:to-emerald-700 text-sm font-medium transition-all shadow-sm hover:shadow-md"
+                    >
+                      <Eye className="w-4 h-4" /> Открыть
+                    </Link>
+                    <Link 
+                      to={`/garden/${garden.id}/edit`} 
+                      className="flex items-center justify-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-2.5 rounded-xl hover:bg-blue-100 text-sm font-medium transition-all"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Link>
+                    <button 
+                      onClick={() => deleteGarden(garden.id)} 
+                      className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+      <MobileNav />
+
+      {/* Модалка создания */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Новый участок</h2>
+              <button onClick={() => { setShowModal(false); setPhoto(null); setPhotoPreview(null); }}>
+                <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Название */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Название *</label>
+                <input 
+                  type="text" 
+                  placeholder="Например: Дача у реки" 
+                  value={newGarden.name} 
+                  onChange={e => setNewGarden({...newGarden, name: e.target.value})} 
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all" 
+                  autoFocus 
+                />
+              </div>
+              
+              {/* Адрес */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Адрес или описание</label>
+                <input 
+                  type="text" 
+                  placeholder="Например: Московская область, 20 км от МКАД" 
+                  value={newGarden.location} 
+                  onChange={e => setNewGarden({...newGarden, location: e.target.value})} 
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all" 
+                />
+              </div>
+              
+              {/* Загрузка фото */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Фото участка</label>
+                
+                {photoPreview ? (
+                  <div className="relative rounded-xl overflow-hidden mb-2">
+                    <img src={photoPreview} alt="Предпросмотр" className="w-full h-40 object-cover" />
+                    <button 
+                      onClick={() => { setPhoto(null); setPhotoPreview(null); }}
+                      className="absolute top-2 right-2 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-green-400 hover:bg-green-50 transition-all">
+                    <div className="flex flex-col items-center gap-1">
+                      <Image className="w-8 h-8 text-gray-400" />
+                      <span className="text-sm text-gray-500">Нажмите, чтобы выбрать фото</span>
+                      <span className="text-xs text-gray-400">JPG, PNG до 5 МБ</span>
+                    </div>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handlePhotoSelect} 
+                      className="hidden" 
+                    />
+                  </label>
+                )}
+              </div>
+              
+              <p className="text-xs text-gray-400">Размер участка можно настроить позже в редакторе</p>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button 
+                onClick={createGarden} 
+                disabled={uploading}
+                className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white py-2.5 rounded-xl hover:from-green-700 hover:to-emerald-700 font-medium transition-all disabled:opacity-50 shadow-md shadow-green-500/20"
+              >
+                {uploading ? 'Загрузка фото...' : 'Создать и перейти к редактированию'}
+              </button>
+              <button 
+                onClick={() => { setShowModal(false); setPhoto(null); setPhotoPreview(null); }} 
+                className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl hover:bg-gray-200 font-medium transition-all"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Дополнительные стили */
+body {
+  background-color: #f9fafb;
+  color: #111827;
+}
