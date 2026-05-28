@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { ArrowLeft, Home, Square, Flower2, TreePine, Warehouse, Trash2, Plus, Minus, Eye } from 'lucide-react'
 import { Rnd } from 'react-rnd'
 import Header from '../components/Header'
+import { useReferenceStore } from '../store/referenceStore'
 
 const ZONE_TYPES = [
   { type: 'house', name: 'Здание', icon: '🏠', color: '#D4A574', defaultW: 150, defaultH: 120 },
@@ -30,14 +31,14 @@ export default function GardenEditor() {
   const [zoneName, setZoneName] = useState('')
   const [showPlantModal, setShowPlantModal] = useState(false)
   const [allPlants, setAllPlants] = useState([])
-  const [searchPlant, setSearchPlant] = useState('')
 
-  useEffect(() => { loadData() }, [id])
+  const loadData = useCallback(async () => {
+    const [{ data: layoutData }, { data: bedsData }] = await Promise.all([
+      supabase.from('layouts').select('*').eq('id', id).single(),
+      supabase.from('beds').select('*').eq('layout_id', id),
+    ])
 
-  async function loadData() {
-    const { data: layoutData } = await supabase.from('layouts').select('*').eq('id', id).single()
     if (layoutData) setLayout(layoutData)
-    const { data: bedsData } = await supabase.from('beds').select('*').eq('layout_id', id)
     if (bedsData) {
       setZones(bedsData.map(b => ({
         ...b,
@@ -48,7 +49,12 @@ export default function GardenEditor() {
       })))
     }
     setLoading(false)
-  }
+  }, [id])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData()
+  }, [loadData])
 
   async function addZone(type) {
     const preset = ZONE_TYPES.find(z => z.type === type)
@@ -80,9 +86,8 @@ export default function GardenEditor() {
   }
 
   async function openPlantModal() {
-    const { data } = await supabase.from('plants').select('*').order('name')
+    const data = await useReferenceStore.getState().getPlants()
     setAllPlants(data || [])
-    setSearchPlant('')
     setShowPlantModal(true)
   }
 

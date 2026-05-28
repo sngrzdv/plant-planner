@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Droplets, Calendar, Sprout, Shield, FlaskRound as Flask, Bug } from 'lucide-react'
@@ -13,40 +13,46 @@ export default function PlantDetail() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('info')
   
-  useEffect(() => {
-    loadPlant()
-  }, [id])
-  
-  async function loadPlant() {
-    // Растение
+  const loadPlant = useCallback(async () => {
     const { data: plantData } = await supabase
       .from('plants')
       .select(`*, category:category_id(id, name, icon)`)
       .eq('id', id)
       .single()
-    if (plantData) setPlant(plantData)
-    
-    // Сорта
-    const { data: varietiesData } = await supabase.from('plant_varieties').select('*').eq('plant_id', id)
-    if (varietiesData) setVarieties(varietiesData)
-    
-    // Совместимость
-    const { data: companionsData } = await supabase
-      .from('plant_companions')
-      .select(`*, companion:companion_id(id, name, image_url)`)
-      .eq('plant_id', id)
-    if (companionsData) setCompanions(companionsData)
-    
-    // Удобрения
-    const { data: fertilizersData } = await supabase.from('fertilizers').select('*').eq('plant_id', id)
-    if (fertilizersData) setFertilizers(fertilizersData)
-    
-    // Болезни
-    const { data: issuesData } = await supabase.from('plant_issues').select('*').eq('plant_id', id)
-    if (issuesData) setIssues(issuesData)
-    
+
+    if (!plantData) {
+      setLoading(false)
+      return
+    }
+
+    setPlant(plantData)
     setLoading(false)
-  }
+
+    const [
+      { data: varietiesData },
+      { data: companionsData },
+      { data: fertilizersData },
+      { data: issuesData },
+    ] = await Promise.all([
+      supabase.from('plant_varieties').select('*').eq('plant_id', id),
+      supabase
+        .from('plant_companions')
+        .select(`*, companion:companion_id(id, name, image_url)`)
+        .eq('plant_id', id),
+      supabase.from('fertilizers').select('*').eq('plant_id', id),
+      supabase.from('plant_issues').select('*').eq('plant_id', id),
+    ])
+
+    if (varietiesData) setVarieties(varietiesData)
+    if (companionsData) setCompanions(companionsData)
+    if (fertilizersData) setFertilizers(fertilizersData)
+    if (issuesData) setIssues(issuesData)
+  }, [id])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadPlant()
+  }, [loadPlant])
   
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">

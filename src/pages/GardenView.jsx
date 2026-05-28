@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search, Check } from 'lucide-react'
+import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search } from 'lucide-react'
 import Header from '../components/Header'
 import { useAuthStore } from '../store/authStore'
 import { reminderService } from '../services/reminderService'
+import { useReferenceStore } from '../store/referenceStore'
 
 const ZONE_ICONS = {
   house: '🏠', rect: '🥬', flowerbed: '🌸', tree: '🌳', greenhouse: '🏡', bush: '🪴', path: '🪨', pond: '💧',
@@ -31,36 +32,37 @@ export default function GardenView() {
   const [searchPlant, setSearchPlant] = useState('')
   const [planting, setPlanting] = useState(false)
 
-  useEffect(() => { loadData() }, [id])
+  const loadData = useCallback(async () => {
+    const [{ data: l }, { data: z }] = await Promise.all([
+      supabase.from('layouts').select('*').eq('id', id).single(),
+      supabase.from('beds').select('*, plant:plant_id(id, name)').eq('layout_id', id),
+    ])
 
-  async function loadData() {
-    const { data: l } = await supabase.from('layouts').select('*').eq('id', id).single()
     if (l) setLayout(l)
-    
-    const { data: z } = await supabase
-      .from('beds')
-      .select('*, plant:plant_id(id, name)')
-      .eq('layout_id', id)
     if (z) setZones(z)
     
     setLoading(false)
-  }
+  }, [id])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData()
+  }, [loadData])
 
   async function clickZone(zone) {
     setSelectedZone(zone)
     
-    // Загружаем растения из plants_on_beds (пересаженные из горшков)
-    const { data: plantsOnBed } = await supabase
-      .from('plants_on_beds')
-      .select('*, plants:plant_id(id, name, watering_freq_days, maturation_days, image_url)')
-      .eq('bed_id', zone.id)
-
-    // Загружаем растения из bed_elements (посаженные через редактор грядки)
-    const { data: bedElements } = await supabase
-      .from('bed_elements')
-      .select('*, plant:plant_id(id, name, watering_freq_days, maturation_days, image_url)')
-      .eq('bed_id', zone.id)
-      .eq('type', 'plant_spot')
+    const [{ data: plantsOnBed }, { data: bedElements }] = await Promise.all([
+      supabase
+        .from('plants_on_beds')
+        .select('*, plants:plant_id(id, name, watering_freq_days, maturation_days, image_url)')
+        .eq('bed_id', zone.id),
+      supabase
+        .from('bed_elements')
+        .select('*, plant:plant_id(id, name, watering_freq_days, maturation_days, image_url)')
+        .eq('bed_id', zone.id)
+        .eq('type', 'plant_spot'),
+    ])
 
     // Объединяем оба списка
     const allZonePlants = [
@@ -102,7 +104,7 @@ export default function GardenView() {
   }
 
   async function openPlantModal() {
-    const { data } = await supabase.from('plants').select('*').order('name')
+    const data = await useReferenceStore.getState().getPlants()
     setAllPlants(data || [])
     setSearchPlant('')
     setShowPlantModal(true)

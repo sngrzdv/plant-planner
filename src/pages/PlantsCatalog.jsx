@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
+import { useReferenceStore } from '../store/referenceStore'
 import { 
-  Search, Sprout, Droplets, Calendar, X, Plus, Filter
+  Search, Sprout, Droplets, Calendar, X, Plus
 } from 'lucide-react'
 import Header from '../components/Header'
 import PlantImporter from '../components/PlantImporter'
@@ -25,20 +26,24 @@ export default function PlantsCatalog() {
     planting_method: 'direct', days_to_transplant: 0, days_to_harvest: 60
   })
   
-  useEffect(() => { loadData() }, [])
-  
-  async function loadData() {
-    const { data: categoriesData } = await supabase.from('plant_categories').select('*')
-    if (categoriesData) setCategories(categoriesData)
-    
-    const { data: plantsData } = await supabase
-      .from('plants')
-      .select(`*, category:category_id(id, name, icon)`)
-      .order('name')
-    
-    if (plantsData) setPlants(plantsData)
+  const loadData = useCallback(async () => {
+    const [{ data: plantsData }, categoriesData] = await Promise.all([
+      supabase.from('plants').select(`*, category:category_id(id, name, icon)`).order('name'),
+      useReferenceStore.getState().getCategories(),
+    ])
+
+    setCategories(categoriesData || [])
+    if (plantsData) {
+      setPlants(plantsData)
+      useReferenceStore.setState({ plants: plantsData, plantsLoadedAt: Date.now() })
+    }
     setLoading(false)
-  }
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData()
+  }, [loadData])
   
   async function addPlant() {
     if (!newPlant.name || !newPlant.category_id) {
@@ -54,6 +59,7 @@ export default function PlantsCatalog() {
     
     if (!error && data) {
       setPlants([...plants, data])
+      useReferenceStore.getState().invalidateReferences()
       setShowAddModal(false)
       setNewPlant({
         name: '', category_id: '', watering_freq_days: 3,
@@ -67,6 +73,7 @@ export default function PlantsCatalog() {
     if (!confirm('Удалить растение? Это действие нельзя отменить.')) return
     await supabase.from('plants').delete().eq('id', id)
     setPlants(plants.filter(p => p.id !== id))
+    useReferenceStore.getState().invalidateReferences()
   }
   
   const filteredPlants = plants.filter(plant => {

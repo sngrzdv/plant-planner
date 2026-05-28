@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useAuthStore } from '../store/authStore'
 import { Sprout } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { loadProfile } = useAuthStore()
   
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetEmail, setResetEmail] = useState('')
+  const [resetMessage, setResetMessage] = useState('')
+  const [showResetForm, setShowResetForm] = useState(false)
   const [error, setError] = useState('')
   
   const handleLogin = async (e) => {
@@ -18,7 +20,7 @@ export default function Login() {
     setLoading(true)
     setError('')
     
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password
     })
@@ -33,28 +35,35 @@ export default function Login() {
       }
       setLoading(false)
     } else {
-      // Успешный вход
-      await loadProfile(data.user.id)
+      // Session sync and profile load are handled in App.jsx.
       navigate('/dashboard')
+      setLoading(false)
     }
-    if (data?.user) {
-      // Проверяем, не заблокирован ли пользователь
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_blocked')
-        .eq('id', data.user.id)
-        .single()
-      
-      if (profile?.is_blocked) {
-        await supabase.auth.signOut()
-        setError('Ваш аккаунт заблокирован администратором')
-        setLoading(false)
-        return
-      }
-      
-      await loadProfile(data.user.id)
-      navigate('/dashboard')
+  }
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault()
+    setError('')
+    setResetMessage('')
+
+    if (!resetEmail.trim()) {
+      setError('Введите email для восстановления')
+      return
     }
+
+    setResetLoading(true)
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+
+    if (resetError) {
+      setError(`Ошибка отправки письма: ${resetError.message}`)
+      setResetLoading(false)
+      return
+    }
+
+    setResetMessage('Письмо отправлено. Проверьте почту и перейдите по ссылке для смены пароля.')
+    setResetLoading(false)
   }
   
   return (
@@ -74,6 +83,11 @@ export default function Login() {
         {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
             {error}
+          </div>
+        )}
+        {resetMessage && (
+          <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg text-sm">
+            {resetMessage}
           </div>
         )}
         
@@ -125,11 +139,39 @@ export default function Login() {
         </p>
         
         <p className="text-center mt-2">
-          <button onClick={() => alert('Восстановление пароля пока недоступно')} 
-            className="text-sm text-gray-400 hover:text-green-600">
+          <button
+            onClick={() => {
+              setShowResetForm((prev) => !prev)
+              setResetEmail(email || '')
+              setError('')
+              setResetMessage('')
+            }}
+            className="text-sm text-gray-400 hover:text-green-600"
+          >
             Забыли пароль?
           </button>
         </p>
+
+        {showResetForm && (
+          <form onSubmit={handleResetPassword} className="mt-4 p-4 bg-gray-50 rounded-lg space-y-3">
+            <p className="text-sm text-gray-600">Укажите email, и мы отправим ссылку для восстановления.</p>
+            <input
+              type="email"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              placeholder="your@email.com"
+              required
+            />
+            <button
+              type="submit"
+              disabled={resetLoading}
+              className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              {resetLoading ? 'Отправка...' : 'Отправить ссылку'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )

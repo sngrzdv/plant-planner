@@ -6,35 +6,51 @@ export const useAuthStore = create((set, get) => ({
   profile: null,
   isAdmin: false,
   loading: true,
+  profileRequest: null,
   
   setUser: (user) => set({ user }),
   
   setProfile: (profile) => {
-  set({ 
-    profile,
-    isAdmin: profile?.role_id === 2
-  })
-},
+    set({
+      profile,
+      isAdmin: profile?.role_id === 2
+    })
+  },
   
   signOut: async () => {
     await supabase.auth.signOut()
     set({ user: null, profile: null, isAdmin: false })
   },
   
-  loadProfile: async (userId) => {
-    const { data, error } = await supabase
+  loadProfile: async (userId, { force = false } = {}) => {
+    const { profile, profileRequest } = get()
+    if (!force && profile?.id === userId) {
+      return profile
+    }
+    if (!force && profileRequest) {
+      return profileRequest
+    }
+
+    const request = supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single()
-    
-    console.log('Загружен профиль:', data)
-    console.log('Ошибка загрузки:', error)
-    
-    if (!error && data) {
-      get().setProfile(data)
-    }
-    return data
+      .then(({ data, error }) => {
+        if (error) {
+          return null
+        }
+        if (data) {
+          get().setProfile(data)
+        }
+        return data
+      })
+      .finally(() => {
+        set({ profileRequest: null })
+      })
+
+    set({ profileRequest: request })
+    return request
   },
   
   setLoading: (loading) => set({ loading })

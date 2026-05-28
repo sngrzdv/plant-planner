@@ -1,15 +1,46 @@
 const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY
+const WEATHER_TTL_MS = 10 * 60 * 1000
+const CACHE_PREFIX = 'weatherCache:'
+
+function getCachedWeather(key) {
+  try {
+    const raw = localStorage.getItem(`${CACHE_PREFIX}${key}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.data || !parsed?.timestamp) return null
+    if (Date.now() - parsed.timestamp > WEATHER_TTL_MS) return null
+    return parsed.data
+  } catch {
+    return null
+  }
+}
+
+function setCachedWeather(key, data) {
+  try {
+    localStorage.setItem(
+      `${CACHE_PREFIX}${key}`,
+      JSON.stringify({ timestamp: Date.now(), data })
+    )
+  } catch {
+    // ignore cache write errors
+  }
+}
 
 export const weatherApi = {
   // Получить погоду по координатам
   async getWeatherByCoords(lat, lon) {
     if (!API_KEY) return null
+    const cacheKey = `coords:${lat.toFixed(2)}:${lon.toFixed(2)}`
+    const cached = getCachedWeather(cacheKey)
+    if (cached) return cached
     try {
       const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&lang=ru&appid=${API_KEY}&units=metric`
       const response = await fetch(url)
       if (!response.ok) throw new Error('Ошибка')
       const data = await response.json()
-      return this.formatWeather(data)
+      const formatted = this.formatWeather(data)
+      setCachedWeather(cacheKey, formatted)
+      return formatted
     } catch (err) {
       console.error('Ошибка погоды:', err)
       return null
@@ -19,12 +50,18 @@ export const weatherApi = {
   // Получить погоду по названию города
   async getWeatherByCity(city) {
     if (!API_KEY) return null
+    const cityKey = (city || '').trim().toLowerCase()
+    const cacheKey = `city:${cityKey}`
+    const cached = getCachedWeather(cacheKey)
+    if (cached) return cached
     try {
       const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&lang=ru&appid=${API_KEY}&units=metric`
       const response = await fetch(url)
       if (!response.ok) throw new Error('Город не найден')
       const data = await response.json()
-      return this.formatWeather(data)
+      const formatted = this.formatWeather(data)
+      setCachedWeather(cacheKey, formatted)
+      return formatted
     } catch (err) {
       console.error('Ошибка погоды:', err)
       return null
@@ -41,13 +78,17 @@ export const weatherApi = {
     // Пробуем геолокацию
     try {
       const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 1500,
+          maximumAge: 10 * 60 * 1000,
+          enableHighAccuracy: false,
+        })
       })
       return await this.getWeatherByCoords(
         position.coords.latitude,
         position.coords.longitude
       )
-    } catch (geoError) {
+    } catch {
       // Если геолокация не доступна — Москва по умолчанию
       console.log('Геолокация не доступна, использую Москву')
       return await this.getWeatherByCity('Москва')

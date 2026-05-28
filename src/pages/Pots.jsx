@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -11,6 +11,7 @@ import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 import { reminderService } from '../services/reminderService'
 import { notificationService } from '../services/notificationService'
+import { useReferenceStore } from '../store/referenceStore'
 
 export default function Pots() {
   const [categories, setCategories] = useState([])
@@ -27,7 +28,6 @@ export default function Pots() {
   const [selectedPot, setSelectedPot] = useState(null)
   const [gardens, setGardens] = useState([])
   const [beds, setBeds] = useState([])
-  const [selectedGarden, setSelectedGarden] = useState(null)
   const [selectedBed, setSelectedBed] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeTab, setActiveTab] = useState('growing')
@@ -48,15 +48,25 @@ export default function Pots() {
     notes: ''
   })
 
-  useEffect(() => { loadData() }, [])
+  const loadData = useCallback(async () => {
+    const [
+      { data: potsData },
+      { data: transplantedData },
+    ] = await Promise.all([
+      supabase
+        .from('pots')
+        .select(`*, plants:plant_id(*)`)
+        .eq('user_id', user.id)
+        .eq('status', 'growing')
+        .order('sowing_date', { ascending: false }),
+      supabase
+        .from('pots')
+        .select(`*, plants:plant_id(*)`)
+        .eq('user_id', user.id)
+        .eq('status', 'transplanted')
+        .order('transplanted_date', { ascending: false }),
+    ])
 
-  async function loadData() {
-    const { data: potsData } = await supabase
-      .from('pots')
-      .select(`*, plants:plant_id(*)`)
-      .eq('user_id', user.id)
-      .eq('status', 'growing')
-      .order('sowing_date', { ascending: false })
     if (potsData) {
       setPots(potsData)
       potsData.forEach(pot => {
@@ -69,22 +79,21 @@ export default function Pots() {
       })
     }
 
-    const { data: transplantedData } = await supabase
-      .from('pots')
-      .select(`*, plants:plant_id(*)`)
-      .eq('user_id', user.id)
-      .eq('status', 'transplanted')
-      .order('transplanted_date', { ascending: false })
     if (transplantedData) setTransplantedPots(transplantedData)
-
-    const { data: plantsData } = await supabase.from('plants').select('*').order('name')
-    if (plantsData) setPlants(plantsData)
-
     setLoading(false)
 
-    const { data: catData } = await supabase.from('plant_categories').select('*')
-    if (catData) setCategories(catData)
-  }
+    const [plantsData, catData] = await Promise.all([
+      useReferenceStore.getState().getPlants(),
+      useReferenceStore.getState().getCategories(),
+    ])
+    setPlants(plantsData || [])
+    setCategories(catData || [])
+  }, [user.id])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData()
+  }, [loadData])
 
   async function addPot() {
     if (!newPot.plant_id) return alert('Выберите растение')
@@ -129,14 +138,12 @@ export default function Pots() {
     const { data: gardensData } = await supabase.from('layouts').select('*').eq('user_id', user.id)
     if (gardensData) setGardens(gardensData)
     setTransplantStep(1)
-    setSelectedGarden(null)
     setSelectedBed(null)
     setSelectedTransplantCell(null)
     setShowTransplantModal(true)
   }
 
   async function loadBeds(gardenId) {
-    setSelectedGarden(gardenId)
     const { data: bedsData } = await supabase
       .from('beds').select('*').eq('layout_id', gardenId)
       .in('type', ['rect', 'flowerbed', 'greenhouse'])
@@ -196,7 +203,6 @@ export default function Pots() {
     alert('✅ Растение успешно пересажено на грядку!')
     setShowTransplantModal(false)
     setSelectedPot(null)
-    setSelectedGarden(null)
     setSelectedBed(null)
     setSelectedTransplantCell(null)
     setTransplantStep(1)
