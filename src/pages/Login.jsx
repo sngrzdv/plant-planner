@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { getResetPasswordUrl } from '../lib/siteUrl'
 import { Sprout } from 'lucide-react'
 
 export default function Login() {
@@ -52,8 +53,9 @@ export default function Login() {
     }
 
     setResetLoading(true)
+    const redirectTo = getResetPasswordUrl()
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo,
     })
 
     if (resetError) {

@@ -5,4 +5,9 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_PROXY_URL || import.meta.env.V
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 // Создаём подключение к Supabase
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+  },
+})

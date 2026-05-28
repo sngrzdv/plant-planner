@@ -8,6 +8,7 @@ export default function ResetPassword() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [checkingLink, setCheckingLink] = useState(true)
   const [validSession, setValidSession] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -15,23 +16,52 @@ export default function ResetPassword() {
   useEffect(() => {
     let active = true
 
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!active) return
-      if (session) {
-        setValidSession(true)
-        return
+    const initRecovery = async () => {
+      setCheckingLink(true)
+      setError('')
+
+      try {
+        const params = new URLSearchParams(window.location.search)
+        const code = params.get('code')
+
+        // PKCE: после перехода по ссылке из письма Supabase добавляет ?code=...
+        if (code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          if (exchangeError) {
+            if (active) {
+              setError('Ссылка недействительна или устарела. Запросите восстановление ещё раз.')
+            }
+            return
+          }
+          window.history.replaceState({}, document.title, '/reset-password')
+        }
+
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!active) return
+
+        if (session) {
+          setValidSession(true)
+          return
+        }
+
+        setError('Ссылка недействительна или устарела. Запросите восстановление ещё раз.')
+      } catch {
+        if (active) {
+          setError('Не удалось проверить ссылку. Попробуйте запросить письмо снова.')
+        }
+      } finally {
+        if (active) setCheckingLink(false)
       }
-      setError('Ссылка недействительна или устарела. Запросите восстановление ещё раз.')
     }
 
-    checkSession()
+    initRecovery()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return
       if (event === 'PASSWORD_RECOVERY' || session) {
         setValidSession(true)
         setError('')
+        setCheckingLink(false)
       }
     })
 
@@ -64,6 +94,7 @@ export default function ResetPassword() {
       return
     }
 
+    await supabase.auth.signOut()
     setMessage('Пароль обновлён. Сейчас перейдём на страницу входа.')
     setLoading(false)
     setTimeout(() => navigate('/login'), 1200)
@@ -80,8 +111,23 @@ export default function ResetPassword() {
           <p className="text-gray-600 mt-2">Введите новый пароль для аккаунта</p>
         </div>
 
+        {checkingLink && (
+          <div className="mb-4 flex justify-center py-4">
+            <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>}
         {message && <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg text-sm">{message}</div>}
+
+        {!checkingLink && error && !validSession && (
+          <Link
+            to="/login"
+            className="block w-full text-center bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 font-medium mb-4"
+          >
+            Запросить новую ссылку
+          </Link>
+        )}
 
         <form onSubmit={handleReset} className="space-y-4">
           <div>
@@ -94,7 +140,7 @@ export default function ResetPassword() {
               placeholder="Минимум 6 символов"
               minLength={6}
               required
-              disabled={!validSession || loading}
+              disabled={!validSession || loading || checkingLink}
             />
           </div>
 
@@ -108,13 +154,13 @@ export default function ResetPassword() {
               placeholder="Повторите пароль"
               minLength={6}
               required
-              disabled={!validSession || loading}
+              disabled={!validSession || loading || checkingLink}
             />
           </div>
 
           <button
             type="submit"
-            disabled={!validSession || loading}
+            disabled={!validSession || loading || checkingLink}
             className="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
           >
             {loading ? 'Сохранение...' : 'Сохранить новый пароль'}
