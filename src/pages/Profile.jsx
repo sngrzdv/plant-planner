@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { createElement, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { 
@@ -33,81 +33,83 @@ export default function Profile() {
   const [newPassword, setNewPassword] = useState('')
   
   useEffect(() => {
-    if (activeTab === 'stats') loadStats()
-  }, [activeTab])
-  
-  async function loadStats() {
-    setLoading(true)
-    try {
-      const userId = profile?.id
-      
-      const [
-        { count: gardens },
-        { count: pots },
-        { count: reminders },
-        { count: completed },
-        { count: plantsOnBeds },
-        { data: yearlyData },
-        { data: topPlantsData },
-        { data: monthlyData }
-      ] = await Promise.all([
-        supabase.from('layouts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-        supabase.from('pots').select('*', { count: 'exact', head: true }).eq('status', 'growing').eq('user_id', userId),
-        supabase.from('reminders').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('user_id', userId),
-        supabase.from('reminders').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('user_id', userId),
-        supabase.from('plants_on_beds').select('*', { count: 'exact', head: true }),
-        supabase.from('bed_elements').select('planted_year, plant_id, plants:plant_id(name)').eq('type', 'plant_spot').order('planted_year', { ascending: false }),
-        supabase.from('bed_elements').select('plant_id, plants:plant_id(name, image_url)').eq('type', 'plant_spot'),
-        supabase.from('reminders').select('due_date, status').eq('user_id', userId),
-      ])
-      
-      setStats({
-        gardens: gardens || 0,
-        pots: pots || 0,
-        pendingReminders: reminders || 0,
-        completedReminders: completed || 0,
-        plantsOnBeds: plantsOnBeds || 0,
-        totalReminders: (reminders || 0) + (completed || 0),
-        completionRate: (reminders || 0) + (completed || 0) > 0 
-          ? Math.round(((completed || 0) / ((reminders || 0) + (completed || 0))) * 100) : 0
-      })
-      
-      if (yearlyData) {
-        const byYear = {}
-        yearlyData.forEach(item => {
-          const year = item.planted_year || new Date().getFullYear()
-          if (!byYear[year]) byYear[year] = { year, count: 0, plants: [] }
-          byYear[year].count++
-          byYear[year].plants.push(item.plants?.name)
+    if (activeTab !== 'stats') return
+
+    const loadStats = async () => {
+      setLoading(true)
+      try {
+        const userId = profile?.id
+        
+        const [
+          { count: gardens },
+          { count: pots },
+          { count: reminders },
+          { count: completed },
+          { count: plantsOnBeds },
+          { data: yearlyData },
+          { data: topPlantsData },
+          { data: monthlyData }
+        ] = await Promise.all([
+          supabase.from('layouts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+          supabase.from('pots').select('*', { count: 'exact', head: true }).eq('status', 'growing').eq('user_id', userId),
+          supabase.from('reminders').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('user_id', userId),
+          supabase.from('reminders').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('user_id', userId),
+          supabase.from('plants_on_beds').select('*', { count: 'exact', head: true }),
+          supabase.from('bed_elements').select('planted_year, plant_id, plants:plant_id(name)').eq('type', 'plant_spot').order('planted_year', { ascending: false }),
+          supabase.from('bed_elements').select('plant_id, plants:plant_id(name, image_url)').eq('type', 'plant_spot'),
+          supabase.from('reminders').select('due_date, status').eq('user_id', userId),
+        ])
+        
+        setStats({
+          gardens: gardens || 0,
+          pots: pots || 0,
+          pendingReminders: reminders || 0,
+          completedReminders: completed || 0,
+          plantsOnBeds: plantsOnBeds || 0,
+          totalReminders: (reminders || 0) + (completed || 0),
+          completionRate: (reminders || 0) + (completed || 0) > 0 
+            ? Math.round(((completed || 0) / ((reminders || 0) + (completed || 0))) * 100) : 0
         })
-        setYearlyStats(Object.values(byYear).sort((a, b) => b.year - a.year))
+        
+        if (yearlyData) {
+          const byYear = {}
+          yearlyData.forEach(item => {
+            const year = item.planted_year || new Date().getFullYear()
+            if (!byYear[year]) byYear[year] = { year, count: 0, plants: [] }
+            byYear[year].count++
+            byYear[year].plants.push(item.plants?.name)
+          })
+          setYearlyStats(Object.values(byYear).sort((a, b) => b.year - a.year))
+        }
+        
+        if (topPlantsData) {
+          const counts = {}
+          topPlantsData.forEach(item => {
+            const name = item.plants?.name || 'Неизвестно'
+            counts[name] = (counts[name] || 0) + 1
+          })
+          setTopPlants(Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5))
+        }
+        
+        if (monthlyData) {
+          const byMonth = {}
+          monthlyData.forEach(item => {
+            const month = item.due_date?.substring(0, 7)
+            if (!byMonth[month]) byMonth[month] = { month, total: 0, completed: 0 }
+            byMonth[month].total++
+            if (item.status === 'completed') byMonth[month].completed++
+          })
+          setMonthlyActivity(Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)).slice(-6))
+        }
+        
+      } catch (e) {
+        console.error(e)
       }
-      
-      if (topPlantsData) {
-        const counts = {}
-        topPlantsData.forEach(item => {
-          const name = item.plants?.name || 'Неизвестно'
-          counts[name] = (counts[name] || 0) + 1
-        })
-        setTopPlants(Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5))
-      }
-      
-      if (monthlyData) {
-        const byMonth = {}
-        monthlyData.forEach(item => {
-          const month = item.due_date?.substring(0, 7)
-          if (!byMonth[month]) byMonth[month] = { month, total: 0, completed: 0 }
-          byMonth[month].total++
-          if (item.status === 'completed') byMonth[month].completed++
-        })
-        setMonthlyActivity(Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)).slice(-6))
-      }
-      
-    } catch (e) {
-      console.error(e)
+      setLoading(false)
     }
-    setLoading(false)
-  }
+
+    loadStats()
+  }, [activeTab, profile?.id])
   
   async function saveProfile() {
     setSaving(true)
@@ -391,12 +393,12 @@ function StatBox({ icon, value, label, color }) {
   )
 }
 
-function ToggleRow({ icon: Icon, title, desc, enabled, onChange }) {
+function ToggleRow({ icon, title, desc, enabled, onChange }) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
-          <Icon className="w-4 h-4" />
+          {createElement(icon, { className: 'w-4 h-4' })}
         </div>
         <div>
           <p className="font-medium text-sm">{title}</p>

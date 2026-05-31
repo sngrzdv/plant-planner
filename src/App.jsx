@@ -1,12 +1,12 @@
 import { weatherApi } from './services/weatherApi'
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom'
-import { createElement, useEffect, useState } from 'react'
+import { createElement, lazy, Suspense, useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
 import { useReferenceStore } from './store/referenceStore'
 import { 
-  Sprout, LayoutGrid, Flower, Calendar, 
-  CheckCircle, BookOpen, Moon, Droplets
+  LayoutGrid, Flower, Calendar, 
+  CheckCircle, BookOpen, Moon
 } from 'lucide-react'
 import Header from './components/Header'
 import { getMoonData } from './utils/lunar'
@@ -15,18 +15,61 @@ import { notificationService } from './services/notificationService'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ResetPassword from './pages/ResetPassword'
-import MyGardens from './pages/MyGardens'
-import GardenEditor from './pages/GardenEditor'
-import PlantsCatalog from './pages/PlantsCatalog'
-import PlantDetail from './pages/PlantDetail'
-import Pots from './pages/Pots'
-import Reminders from './pages/Reminders'
-import LunarCalendar from './pages/LunarCalendar'
-import AdminPanel from './pages/AdminPanel'
 import MobileNav from './components/MobileNav'
-import Profile from './pages/Profile'
-import GardenView from './pages/GardenView'
-import BedEditor from './pages/BedEditor'
+
+const MyGardens = lazy(() => import('./pages/MyGardens'))
+const GardenEditor = lazy(() => import('./pages/GardenEditor'))
+const GardenView = lazy(() => import('./pages/GardenView'))
+const BedEditor = lazy(() => import('./pages/BedEditor'))
+const PlantsCatalog = lazy(() => import('./pages/PlantsCatalog'))
+const PlantDetail = lazy(() => import('./pages/PlantDetail'))
+const Pots = lazy(() => import('./pages/Pots'))
+const Reminders = lazy(() => import('./pages/Reminders'))
+const LunarCalendar = lazy(() => import('./pages/LunarCalendar'))
+const AdminPanel = lazy(() => import('./pages/AdminPanel'))
+const Profile = lazy(() => import('./pages/Profile'))
+
+function getLunarAdviceForToday() {
+  try {
+    const moonData = getMoonData(new Date())
+    if (moonData.type === 'new_moon' || moonData.type === 'full_moon') {
+      return { text: `${moonData.phase} — отдохните. Полив и посадку лучше отложить.`, emoji: moonData.emoji }
+    }
+    if (moonData.type.includes('waxing')) {
+      return { text: `${moonData.phase}. Отличное время для посадки и пересадки!`, emoji: moonData.emoji }
+    }
+    return { text: `${moonData.phase}. Хорошо для корнеплодов, обрезки и полива.`, emoji: moonData.emoji }
+  } catch (error) {
+    console.debug('Lunar advice unavailable', error)
+    return { text: '', emoji: '🌙' }
+  }
+}
+
+async function safeSupabaseQuery(query, fallback) {
+  try {
+    return await query
+  } catch {
+    return fallback
+  }
+}
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
+
+function LazyPage({ children }) {
+  return (
+    <ProtectedRoute>
+      <Suspense fallback={<PageLoader />}>
+        {children}
+      </Suspense>
+    </ProtectedRoute>
+  )
+}
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuthStore()
@@ -39,7 +82,9 @@ function App() {
   const { setUser, setProfile, setLoading, loadProfile } = useAuthStore()
 
   useEffect(() => {
-    const syncSession = async (session) => {
+    let skipNextInitial = false
+
+    const syncSession = async (session, { blockUi = true } = {}) => {
       if (!session?.user) {
         setUser(null)
         setProfile(null)
@@ -48,24 +93,33 @@ function App() {
       }
 
       setUser(session.user)
-      useReferenceStore.getState().preloadReferences().catch(() => {})
-      const profile = await loadProfile(session.user.id)
+      if (blockUi) {
+        setLoading(false)
+      }
 
-      // Centralized blocked-account check right after sync.
+      const profile = await loadProfile(session.user.id)
       if (profile?.is_blocked) {
         await supabase.auth.signOut()
         setUser(null)
         setProfile(null)
       }
-      setLoading(false)
+
+      // Справочники грузятся по требованию на страницах, чтобы не создавать
+      // лишнюю пачку сетевых запросов сразу после входа.
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      skipNextInitial = true
       syncSession(session)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      syncSession(session)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED') return
+      if (event === 'INITIAL_SESSION' && skipNextInitial) {
+        skipNextInitial = false
+        return
+      }
+      syncSession(session, { blockUi: false })
     })
 
     return () => subscription.unsubscribe()
@@ -78,17 +132,17 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/gardens" element={<ProtectedRoute><MyGardens /></ProtectedRoute>} />
-        <Route path="/catalog" element={<ProtectedRoute><PlantsCatalog /></ProtectedRoute>} />
-        <Route path="/plant/:id" element={<ProtectedRoute><PlantDetail /></ProtectedRoute>} />
-        <Route path="/pots" element={<ProtectedRoute><Pots /></ProtectedRoute>} />
-        <Route path="/reminders" element={<ProtectedRoute><Reminders /></ProtectedRoute>} />
-        <Route path="/lunar" element={<ProtectedRoute><LunarCalendar /></ProtectedRoute>} />
-        <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
-        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-        <Route path="/garden/:id/edit" element={<ProtectedRoute><GardenEditor /></ProtectedRoute>} />
-        <Route path="/garden/:id" element={<ProtectedRoute><GardenView /></ProtectedRoute>} />
-        <Route path="/bed/:id/edit" element={<ProtectedRoute><BedEditor /></ProtectedRoute>} />
+        <Route path="/gardens" element={<LazyPage><MyGardens /></LazyPage>} />
+        <Route path="/catalog" element={<LazyPage><PlantsCatalog /></LazyPage>} />
+        <Route path="/plant/:id" element={<LazyPage><PlantDetail /></LazyPage>} />
+        <Route path="/pots" element={<LazyPage><Pots /></LazyPage>} />
+        <Route path="/reminders" element={<LazyPage><Reminders /></LazyPage>} />
+        <Route path="/lunar" element={<LazyPage><LunarCalendar /></LazyPage>} />
+        <Route path="/admin" element={<LazyPage><AdminPanel /></LazyPage>} />
+        <Route path="/profile" element={<LazyPage><Profile /></LazyPage>} />
+        <Route path="/garden/:id/edit" element={<LazyPage><GardenEditor /></LazyPage>} />
+        <Route path="/garden/:id" element={<LazyPage><GardenView /></LazyPage>} />
+        <Route path="/bed/:id/edit" element={<LazyPage><BedEditor /></LazyPage>} />
         <Route path="/" element={<Navigate to="/dashboard" />} />
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
@@ -97,86 +151,70 @@ function App() {
 }
 
 function Dashboard() {
-  const { profile } = useAuthStore()
+  const { user, profile } = useAuthStore()
+  const userId = user?.id
   const [weather, setWeather] = useState(null)
   const [weatherError, setWeatherError] = useState(false)
-  const [lunarAdvice, setLunarAdvice] = useState({ text: '', emoji: '🌙' })
+  const [lunarAdvice] = useState(getLunarAdviceForToday)
   const [stats, setStats] = useState({ gardens: 0, pots: 0, tasks: 0, plants: 0 })
   const [todayTasks, setTodayTasks] = useState([])
   const [loadingTasks, setLoadingTasks] = useState(true)
   const [completingTask, setCompletingTask] = useState(null)
 
   useEffect(() => {
+    if (!userId) return
+
     const loadDashboard = async () => {
-      // Погода с обработкой ошибок
-      try {
-        const city = profile?.city || null
-        const weatherData = await weatherApi.getWeather(city)
-        if (weatherData) {
-          setWeather(weatherData)
-          setWeatherError(false)
-        } else {
-          setWeatherError(true)
-        }
-      } catch (e) {
-        console.error('Weather error:', e)
+      setLoadingTasks(true)
+      const today = new Date().toISOString().split('T')[0]
+
+      const [
+        weatherData,
+        statsResults,
+        tasksResult,
+        plantsCount,
+      ] = await Promise.all([
+        weatherApi.getWeather(profile?.city || null).catch(() => null),
+        Promise.all([
+          safeSupabaseQuery(supabase.from('layouts').select('id', { count: 'exact', head: true }).eq('user_id', userId), { count: 0 }),
+          safeSupabaseQuery(supabase.from('pots').select('id', { count: 'exact', head: true }).eq('status', 'growing').eq('user_id', userId), { count: 0 }),
+          safeSupabaseQuery(supabase.from('reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('user_id', userId), { count: 0 }),
+        ]),
+        safeSupabaseQuery(
+          supabase
+            .from('reminders')
+            .select('id, title, type, plants:plant_id(name)')
+            .eq('status', 'pending')
+            .eq('due_date', today)
+            .eq('user_id', userId)
+            .limit(5),
+          { data: [] }
+        ),
+        useReferenceStore.getState().getPlants().then((list) => list.length).catch(() => 0),
+      ])
+
+      if (weatherData) {
+        setWeather(weatherData)
+        setWeatherError(false)
+      } else {
         setWeatherError(true)
       }
 
-      // Лунный совет
-      try {
-        const moonData = getMoonData(new Date())
-        if (moonData.type === 'new_moon' || moonData.type === 'full_moon') {
-          setLunarAdvice({ text: `${moonData.phase} — отдохните. Полив и посадку лучше отложить.`, emoji: moonData.emoji })
-        } else if (moonData.type.includes('waxing')) {
-          setLunarAdvice({ text: `${moonData.phase}. Отличное время для посадки и пересадки!`, emoji: moonData.emoji })
-        } else {
-          setLunarAdvice({ text: `${moonData.phase}. Хорошо для корнеплодов, обрезки и полива.`, emoji: moonData.emoji })
-        }
-      } catch (error) {
-        console.debug('Lunar advice unavailable', error)
-      }
-
-      // Статистика
-      try {
-        const [
-          { count: gardens },
-          { count: pots },
-          { count: tasks },
-          { count: plants }
-        ] = await Promise.all([
-          supabase.from('layouts').select('*', { count: 'exact', head: true }).eq('user_id', profile?.id),
-          supabase.from('pots').select('*', { count: 'exact', head: true }).eq('status', 'growing').eq('user_id', profile?.id),
-          supabase.from('reminders').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('user_id', profile?.id),
-          supabase.from('plants').select('*', { count: 'exact', head: true }),
-        ])
-        setStats({ gardens: gardens || 0, pots: pots || 0, tasks: tasks || 0, plants: plants || 0 })
-      } catch (error) {
-        console.debug('Stats unavailable', error)
-      }
-
-      // Задачи на сегодня
-      try {
-        const today = new Date().toISOString().split('T')[0]
-        const { data } = await supabase
-          .from('reminders')
-          .select('id, title, type, plants:plant_id(name)')
-          .eq('status', 'pending')
-          .eq('due_date', today)
-          .eq('user_id', profile?.id)
-          .limit(5)
-        setTodayTasks(data || [])
-      } catch (error) {
-        console.debug('Tasks unavailable', error)
-      }
-
+      const [{ count: gardens }, { count: pots }, { count: tasks }] = statsResults
+      setStats({
+        gardens: gardens || 0,
+        pots: pots || 0,
+        tasks: tasks || 0,
+        plants: plantsCount || 0,
+      })
+      setTodayTasks(tasksResult.data || [])
       setLoadingTasks(false)
     }
 
     loadDashboard()
-    const interval = setInterval(loadDashboard, 5 * 60 * 1000)
+    const interval = setInterval(loadDashboard, 10 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [profile?.city, profile?.id])
+  }, [userId, profile?.city])
 
   async function completeTask(taskId) {
     setCompletingTask(taskId)

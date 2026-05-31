@@ -86,7 +86,12 @@ export default function Reminders() {
   }, [showAddModal, loadPlants])
 
   async function completeReminder(id) {
-    await supabase.from('reminders').update({ status: 'completed' }).eq('id', id)
+    const { error } = await supabase.from('reminders').update({ status: 'completed' }).eq('id', id)
+    if (error) {
+      if (notificationService?.error) notificationService.error('Не удалось выполнить задачу')
+      else alert(`Не удалось выполнить задачу: ${error.message}`)
+      return
+    }
     setReminders(rs => rs.map(r => r.id === id ? { ...r, status: 'completed' } : r))
     if (notificationService?.success) {
       notificationService.success('Задача выполнена! 🎉')
@@ -96,7 +101,12 @@ export default function Reminders() {
   async function skipReminder(id) {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
-    await supabase.from('reminders').update({ due_date: tomorrow.toISOString().split('T')[0] }).eq('id', id)
+    const { error } = await supabase.from('reminders').update({ due_date: tomorrow.toISOString().split('T')[0] }).eq('id', id)
+    if (error) {
+      if (notificationService?.error) notificationService.error('Не удалось перенести задачу')
+      else alert(`Не удалось перенести задачу: ${error.message}`)
+      return
+    }
     loadReminders()
     if (notificationService?.info) {
       notificationService.info('Задача перенесена на завтра')
@@ -168,7 +178,8 @@ export default function Reminders() {
         })
       }
       
-      await supabase.from('reminders').insert(tasks)
+      const { error } = await supabase.from('reminders').insert(tasks)
+      if (error) throw error
       setShowAddModal(false)
       setNewTask({ 
         title: '', 

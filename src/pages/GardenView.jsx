@@ -113,17 +113,22 @@ export default function GardenView() {
   async function plantOnZone(plantId) {
     setPlanting(true)
 
-    await supabase.from('beds').update({ plant_id: plantId }).eq('id', selectedZone.id)
-    
-    const { error } = await supabase.from('plants_on_beds').insert({
-      bed_id: selectedZone.id,
-      plant_id: plantId,
-      planted_date: new Date().toISOString().split('T')[0],
-      source_type: selectedZone.type === 'tree' || selectedZone.type === 'bush' ? 'seed' : 'seed',
-      stage: selectedZone.type === 'tree' || selectedZone.type === 'bush' ? 'adult' : 'seedling'
-    })
-    
-    if (!error) {
+    try {
+      const { error: bedError } = await supabase
+        .from('beds')
+        .update({ plant_id: plantId })
+        .eq('id', selectedZone.id)
+      if (bedError) throw bedError
+
+      const { error: plantError } = await supabase.from('plants_on_beds').insert({
+        bed_id: selectedZone.id,
+        plant_id: plantId,
+        planted_date: new Date().toISOString().split('T')[0],
+        source_type: selectedZone.type === 'tree' || selectedZone.type === 'bush' ? 'seed' : 'seed',
+        stage: selectedZone.type === 'tree' || selectedZone.type === 'bush' ? 'adult' : 'seedling'
+      })
+      if (plantError) throw plantError
+
       const { data: plantData } = await supabase.from('plants').select('*').eq('id', plantId).single()
       if (plantData) {
         const { user } = useAuthStore.getState()
@@ -134,8 +139,11 @@ export default function GardenView() {
       setSelectedZone({ ...selectedZone, plant_id: plantId })
       clickZone(selectedZone)
       setShowPlantModal(false)
+    } catch (error) {
+      alert(`Не удалось посадить растение: ${error.message}`)
+    } finally {
+      setPlanting(false)
     }
-    setPlanting(false)
   }
 
   const filteredPlants = allPlants.filter(p => 

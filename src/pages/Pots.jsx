@@ -97,21 +97,25 @@ export default function Pots() {
 
   async function addPot() {
     if (!newPot.plant_id) return alert('Выберите растение')
-    const { data, error } = await supabase.from('pots').insert({
-      user_id: user.id, plant_id: newPot.plant_id,
-      custom_name: newPot.custom_name || null,
-      sowing_date: newPot.sowing_date, notes: newPot.notes || null, status: 'growing'
-    }).select(`*, plants:plant_id(*)`).single()
+    try {
+      const { data, error } = await supabase.from('pots').insert({
+        user_id: user.id, plant_id: newPot.plant_id,
+        custom_name: newPot.custom_name || null,
+        sowing_date: newPot.sowing_date, notes: newPot.notes || null, status: 'growing'
+      }).select(`*, plants:plant_id(*)`).single()
 
-    if (!error && data) {
+      if (error) throw error
+      if (!data) throw new Error('Supabase не вернул созданную рассаду')
+
       setPots([data, ...pots])
 
-      await supabase.from('garden_journal').insert({
+      const { error: journalError } = await supabase.from('garden_journal').insert({
         user_id: user.id, plant_id: newPot.plant_id,
         pot_id: data.id, action: 'sowed',
         details: `Посеяно: ${data.plants?.name || 'растение'}`,
         created_at: new Date().toISOString()
       })
+      if (journalError) console.warn('Не удалось записать событие в журнал:', journalError)
 
       if (data && data.plants) {
         await reminderService.generateForPlant(user.id, data.plants, 'sowed', data.sowing_date)
@@ -123,19 +127,29 @@ export default function Pots() {
 
       setShowAddModal(false)
       setNewPot({ plant_id: '', custom_name: '', sowing_date: new Date().toISOString().split('T')[0], notes: '' })
+    } catch (error) {
+      alert(`Не удалось добавить рассаду: ${error.message}`)
     }
   }
 
   async function deletePot(id) {
     if (!confirm('Удалить этот горшок?')) return
-    await supabase.from('pots').delete().eq('id', id)
+    const { error } = await supabase.from('pots').delete().eq('id', id)
+    if (error) {
+      alert(`Не удалось удалить горшок: ${error.message}`)
+      return
+    }
     if (activeTab === 'growing') setPots(pots.filter(p => p.id !== id))
     else setTransplantedPots(transplantedPots.filter(p => p.id !== id))
   }
 
   async function openTransplantModal(pot) {
     setSelectedPot(pot)
-    const { data: gardensData } = await supabase.from('layouts').select('*').eq('user_id', user.id)
+    const { data: gardensData, error } = await supabase.from('layouts').select('*').eq('user_id', user.id)
+    if (error) {
+      alert(`Не удалось загрузить участки: ${error.message}`)
+      return
+    }
     if (gardensData) setGardens(gardensData)
     setTransplantStep(1)
     setSelectedBed(null)
@@ -144,20 +158,34 @@ export default function Pots() {
   }
 
   async function loadBeds(gardenId) {
-    const { data: bedsData } = await supabase
+    const { data: bedsData, error } = await supabase
       .from('beds').select('*').eq('layout_id', gardenId)
       .in('type', ['rect', 'flowerbed', 'greenhouse'])
+    if (error) {
+      alert(`Не удалось загрузить грядки: ${error.message}`)
+      return
+    }
     if (bedsData) setBeds(bedsData)
     setTransplantStep(2)
   }
 
   async function selectBedForTransplant(bedId) {
     setSelectedBed(bedId)
-    const { data: bedData } = await supabase.from('beds').select('*').eq('id', bedId).single()
+    const { data: bedData, error: bedError } = await supabase.from('beds').select('*').eq('id', bedId).single()
+    if (bedError) {
+      alert(`Не удалось загрузить грядку: ${bedError.message}`)
+      return
+    }
     setBedForTransplant(bedData)
 
-    const { data: rows } = await supabase.from('bed_elements').select('*').eq('bed_id', bedId).eq('type', 'row')
-    const { data: plantsData } = await supabase.from('bed_elements').select('*, plant:plant_id(name)').eq('bed_id', bedId).eq('type', 'plant_spot')
+    const [{ data: rows, error: rowsError }, { data: plantsData, error: plantsError }] = await Promise.all([
+      supabase.from('bed_elements').select('*').eq('bed_id', bedId).eq('type', 'row'),
+      supabase.from('bed_elements').select('*, plant:plant_id(name)').eq('bed_id', bedId).eq('type', 'plant_spot'),
+    ])
+    if (rowsError || plantsError) {
+      alert(`Не удалось загрузить клетки грядки: ${(rowsError || plantsError).message}`)
+      return
+    }
 
     setBedRows(rows || [])
     setBedPlantsData(plantsData || [])
@@ -168,45 +196,59 @@ export default function Pots() {
     if (!selectedTransplantCell) return alert('Выберите клетку на грядке')
 
     const CELL_SIZE = 50
+    let createdPlantOnBedId = null
+    let createdElementId = null
 
-    await supabase.from('plants_on_beds').insert({
-      bed_id: selectedBed, plant_id: selectedPot.plant_id,
-      planted_date: new Date().toISOString().split('T')[0],
-      source_type: 'pot', source_pot_id: selectedPot.id, stage: 'seedling'
-    })
+    try {
+      const { data: plantOnBed, error: plantOnBedError } = await supabase.from('plants_on_beds').insert({
+        bed_id: selectedBed, plant_id: selectedPot.plant_id,
+        planted_date: new Date().toISOString().split('T')[0],
+        source_type: 'pot', source_pot_id: selectedPot.id, stage: 'seedling'
+      }).select('id').single()
+      if (plantOnBedError) throw plantOnBedError
+      createdPlantOnBedId = plantOnBed?.id
 
-    await supabase.from('bed_elements').insert({
-      bed_id: selectedBed, type: 'plant_spot',
-      name: selectedPot.plants?.name || 'Растение',
-      pos_x: selectedTransplantCell.x + 4, pos_y: selectedTransplantCell.y + 4,
-      width: CELL_SIZE - 8, height: CELL_SIZE - 8,
-      color: '#4ADE80', plant_id: selectedPot.plant_id,
-      planted_year: new Date().getFullYear()
-    })
+      const { data: bedElement, error: bedElementError } = await supabase.from('bed_elements').insert({
+        bed_id: selectedBed, type: 'plant_spot',
+        name: selectedPot.plants?.name || 'Растение',
+        pos_x: selectedTransplantCell.x + 4, pos_y: selectedTransplantCell.y + 4,
+        width: CELL_SIZE - 8, height: CELL_SIZE - 8,
+        color: '#4ADE80', plant_id: selectedPot.plant_id,
+        planted_year: new Date().getFullYear()
+      }).select('id').single()
+      if (bedElementError) throw bedElementError
+      createdElementId = bedElement?.id
 
-    await supabase.from('pots').update({
-      status: 'transplanted', transplanted_to_bed_id: selectedBed,
-      transplanted_date: new Date().toISOString().split('T')[0]
-    }).eq('id', selectedPot.id)
+      const { error: potError } = await supabase.from('pots').update({
+        status: 'transplanted', transplanted_to_bed_id: selectedBed,
+        transplanted_date: new Date().toISOString().split('T')[0]
+      }).eq('id', selectedPot.id)
+      if (potError) throw potError
 
-    await supabase.from('garden_journal').insert({
-      user_id: user.id, plant_id: selectedPot.plant_id,
-      pot_id: selectedPot.id, action: 'transplanted',
-      details: `Пересажено в ${bedForTransplant?.name || 'грядку'}`,
-      created_at: new Date().toISOString()
-    })
+      const { error: journalError } = await supabase.from('garden_journal').insert({
+        user_id: user.id, plant_id: selectedPot.plant_id,
+        pot_id: selectedPot.id, action: 'transplanted',
+        details: `Пересажено в ${bedForTransplant?.name || 'грядку'}`,
+        created_at: new Date().toISOString()
+      })
+      if (journalError) console.warn('Не удалось записать событие пересадки в журнал:', journalError)
 
-    if (selectedPot.plants) {
-      await reminderService.generateForPlant(user.id, selectedPot.plants, 'transplanted', new Date().toISOString().split('T')[0])
+      if (selectedPot.plants) {
+        await reminderService.generateForPlant(user.id, selectedPot.plants, 'transplanted', new Date().toISOString().split('T')[0])
+      }
+
+      alert('✅ Растение успешно пересажено на грядку!')
+      setShowTransplantModal(false)
+      setSelectedPot(null)
+      setSelectedBed(null)
+      setSelectedTransplantCell(null)
+      setTransplantStep(1)
+      loadData()
+    } catch (error) {
+      if (createdElementId) await supabase.from('bed_elements').delete().eq('id', createdElementId)
+      if (createdPlantOnBedId) await supabase.from('plants_on_beds').delete().eq('id', createdPlantOnBedId)
+      alert(`Не удалось пересадить растение: ${error.message}`)
     }
-
-    alert('✅ Растение успешно пересажено на грядку!')
-    setShowTransplantModal(false)
-    setSelectedPot(null)
-    setSelectedBed(null)
-    setSelectedTransplantCell(null)
-    setTransplantStep(1)
-    loadData()
   }
 
   async function loadHistory() {

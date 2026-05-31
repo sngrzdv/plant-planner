@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/supabase/(.*)", "destination": "https://ecpupjrfqitnqkcwcrqa.supabase.co/$1" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }

@@ -27,15 +27,20 @@ export default function PlantsCatalog() {
   })
   
   const loadData = useCallback(async () => {
-    const [{ data: plantsData }, categoriesData] = await Promise.all([
-      supabase.from('plants').select(`*, category:category_id(id, name, icon)`).order('name'),
+    const [plantsData, categoriesData] = await Promise.all([
+      useReferenceStore.getState().getPlants(),
       useReferenceStore.getState().getCategories(),
     ])
 
     setCategories(categoriesData || [])
-    if (plantsData) {
-      setPlants(plantsData)
-      useReferenceStore.setState({ plants: plantsData, plantsLoadedAt: Date.now() })
+    if (plantsData?.length) {
+      const categoryById = new Map((categoriesData || []).map((c) => [c.id, c]))
+      setPlants(
+        plantsData.map((plant) => ({
+          ...plant,
+          category: categoryById.get(plant.category_id) || null,
+        }))
+      )
     }
     setLoading(false)
   }, [])
@@ -57,21 +62,29 @@ export default function PlantsCatalog() {
       .select(`*, category:category_id(id, name, icon)`)
       .single()
     
-    if (!error && data) {
-      setPlants([...plants, data])
-      useReferenceStore.getState().invalidateReferences()
-      setShowAddModal(false)
-      setNewPlant({
-        name: '', category_id: '', watering_freq_days: 3,
-        maturation_days: 60, scientific_facts: '', description: '',
-        planting_method: 'direct', days_to_transplant: 0, days_to_harvest: 60
-      })
+    if (error) {
+      alert(`Не удалось добавить растение: ${error.message}`)
+      return
     }
+    if (!data) return
+
+    setPlants([...plants, data])
+    useReferenceStore.getState().invalidateReferences()
+    setShowAddModal(false)
+    setNewPlant({
+      name: '', category_id: '', watering_freq_days: 3,
+      maturation_days: 60, scientific_facts: '', description: '',
+      planting_method: 'direct', days_to_transplant: 0, days_to_harvest: 60
+    })
   }
   
   async function deletePlant(id) {
     if (!confirm('Удалить растение? Это действие нельзя отменить.')) return
-    await supabase.from('plants').delete().eq('id', id)
+    const { error } = await supabase.from('plants').delete().eq('id', id)
+    if (error) {
+      alert(`Не удалось удалить растение: ${error.message}`)
+      return
+    }
     setPlants(plants.filter(p => p.id !== id))
     useReferenceStore.getState().invalidateReferences()
   }

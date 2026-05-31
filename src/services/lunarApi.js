@@ -1,5 +1,4 @@
 import { generateMonthCalendar, getMoonData, getMoonZodiac } from '../utils/lunar'
-import { getRecommendation } from './gardeningRules'
 
 class LunarApi {
   getMonthCalendar(year, month) {

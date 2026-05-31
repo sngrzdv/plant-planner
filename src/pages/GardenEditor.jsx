@@ -72,17 +72,24 @@ export default function GardenEditor() {
       color: preset.color
     }).select().single()
 
-    if (!error && data) {
-      setZones([...zones, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
+    if (error) {
+      alert(`Не удалось добавить зону: ${error.message}`)
+      return
     }
+    if (data) setZones([...zones, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
   }
 
   async function saveZone(zoneId, x, y, w, h) {
+    const previousZones = zones
     setZones(zones.map(z => z.id === zoneId ? { ...z, _x: x, _y: y, _w: w, _h: h } : z))
-    await supabase.from('beds').update({
+    const { error } = await supabase.from('beds').update({
       pos_x: Math.round(x), pos_y: Math.round(y),
       width: Math.round(w), height: Math.round(h)
     }).eq('id', zoneId)
+    if (error) {
+      setZones(previousZones)
+      alert(`Не удалось сохранить зону: ${error.message}`)
+    }
   }
 
   async function openPlantModal() {
@@ -96,7 +103,12 @@ export default function GardenEditor() {
 
     setZones(zones.map(z => z.id === zoneId ? { ...z, name: newName } : z))
     setSelectedZone(prev => prev ? { ...prev, name: newName } : null)
-    await supabase.from('beds').update({ name: newName }).eq('id', zoneId)
+    const { error } = await supabase.from('beds').update({ name: newName }).eq('id', zoneId)
+    if (error) {
+      alert(`Не удалось сохранить название: ${error.message}`)
+      loadData()
+      return
+    }
     setEditingName(false)
     setZoneName('')
   }
@@ -107,11 +119,19 @@ export default function GardenEditor() {
     const newW = zone._h
     const newH = zone._w
     setZones(zones.map(z => z.id === zoneId ? { ...z, _w: newW, _h: newH } : z))
-    await supabase.from('beds').update({ width: Math.round(newW), height: Math.round(newH) }).eq('id', zoneId)
+    const { error } = await supabase.from('beds').update({ width: Math.round(newW), height: Math.round(newH) }).eq('id', zoneId)
+    if (error) {
+      alert(`Не удалось повернуть зону: ${error.message}`)
+      loadData()
+    }
   }
 
   async function deleteZone(zoneId) {
-    await supabase.from('beds').delete().eq('id', zoneId)
+    const { error } = await supabase.from('beds').delete().eq('id', zoneId)
+    if (error) {
+      alert(`Не удалось удалить зону: ${error.message}`)
+      return
+    }
     setZones(zones.filter(z => z.id !== zoneId))
     setSelectedZone(null)
     setEditingName(false)
@@ -402,8 +422,12 @@ export default function GardenEditor() {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-4">Выберите растение</h2>
             {allPlants.filter(p => p.planting_method === 'perennial').map(plant => (
-              <button key={plant.id} onClick={() => {
-                supabase.from('beds').update({ plant_id: plant.id }).eq('id', selectedZone.id)
+              <button key={plant.id} onClick={async () => {
+                const { error } = await supabase.from('beds').update({ plant_id: plant.id }).eq('id', selectedZone.id)
+                if (error) {
+                  alert(`Не удалось выбрать растение: ${error.message}`)
+                  return
+                }
                 setZones(zones.map(z => z.id === selectedZone.id ? { ...z, plant_id: plant.id } : z))
                 setSelectedZone({ ...selectedZone, plant_id: plant.id })
                 setShowPlantModal(false)

@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
+import { useReferenceStore } from '../store/referenceStore'
 import { 
   Users, Sprout, Shield, Database, Trash2, Plus, BookOpen, 
-  Search, X, Save, TrendingUp, Calendar, Edit, CheckCircle, XCircle
+  Search, X, Edit
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 
 export default function AdminPanel() {
-  const { user, profile, isAdmin } = useAuthStore()
+  const { profile, isAdmin } = useAuthStore()
   const [activeTab, setActiveTab] = useState('users')
   const [users, setUsers] = useState([])
   const [plants, setPlants] = useState([])
@@ -19,6 +20,7 @@ export default function AdminPanel() {
   const [issues, setIssues] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [adminError, setAdminError] = useState('')
   
   // Статистика
   const [adminStats, setAdminStats] = useState({ users: 0, plants: 0, categories: 0 })
@@ -47,9 +49,10 @@ export default function AdminPanel() {
   useEffect(() => { loadAllData() }, [])
   
   async function loadAllData() {
+    setAdminError('')
     const [
-      { data: usersData }, { data: plantsData }, { data: catData },
-      { data: fertData }, { data: issuesData }
+      { data: usersData, error: usersError }, { data: plantsData, error: plantsError }, { data: catData, error: catError },
+      { data: fertData, error: fertError }, { data: issuesData, error: issuesError }
     ] = await Promise.all([
       supabase.from('profiles').select('*'),
       supabase.from('plants').select('*, category:category_id(*)').order('name'),
@@ -57,6 +60,11 @@ export default function AdminPanel() {
       supabase.from('fertilizers').select('*, plants:plant_id(name)').order('name'),
       supabase.from('plant_issues').select('*, plants:plant_id(name)').order('name'),
     ])
+
+    const firstError = usersError || plantsError || catError || fertError || issuesError
+    if (firstError) {
+      setAdminError(`Не удалось загрузить данные админки: ${firstError.message}`)
+    }
     
     if (usersData) setUsers(usersData)
     if (plantsData) setPlants(plantsData)
@@ -73,26 +81,19 @@ export default function AdminPanel() {
     setLoading(false)
   }
   
-  async function toggleAdmin(userId, currentRoleId) {
-    const newRoleId = currentRoleId === 2 ? 1 : 2
-    await supabase.from('profiles').update({ role_id: newRoleId }).eq('id', userId)
-    loadAllData()
-  }
-  
-  async function deleteUser(userId) {
-    if (!confirm('Удалить пользователя и все его данные?')) return
-    await supabase.from('profiles').delete().eq('id', userId)
-    loadAllData()
-  }
-  
   async function savePlant() {
     if (!newPlant.name || !newPlant.category_id) return alert('Заполните название и категорию')
     
-    if (editMode && editPlantId) {
-      await supabase.from('plants').update(newPlant).eq('id', editPlantId)
-    } else {
-      await supabase.from('plants').insert(newPlant)
+    const result = editMode && editPlantId
+      ? await supabase.from('plants').update(newPlant).eq('id', editPlantId)
+      : await supabase.from('plants').insert(newPlant)
+
+    if (result.error) {
+      alert(`Не удалось сохранить растение: ${result.error.message}`)
+      return
     }
+
+    useReferenceStore.getState().invalidateReferences()
     
     setShowPlantForm(false)
     setEditMode(false)
@@ -120,13 +121,23 @@ export default function AdminPanel() {
   
   async function deletePlant(id) {
     if (!confirm('Удалить растение?')) return
-    await supabase.from('plants').delete().eq('id', id)
+    const { error } = await supabase.from('plants').delete().eq('id', id)
+    if (error) {
+      alert(`Не удалось удалить растение: ${error.message}`)
+      return
+    }
+    useReferenceStore.getState().invalidateReferences()
     loadAllData()
   }
   
   async function addCategory() {
     if (!newCategory.name) return alert('Введите название')
-    await supabase.from('plant_categories').insert(newCategory)
+    const { error } = await supabase.from('plant_categories').insert(newCategory)
+    if (error) {
+      alert(`Не удалось добавить категорию: ${error.message}`)
+      return
+    }
+    useReferenceStore.getState().invalidateReferences()
     setShowCategoryForm(false)
     setNewCategory({ name: '', icon: '🌱' })
     loadAllData()
@@ -134,33 +145,54 @@ export default function AdminPanel() {
   
   async function deleteCategory(id) {
     if (!confirm('Удалить категорию?')) return
-    await supabase.from('plant_categories').delete().eq('id', id)
+    const { error } = await supabase.from('plant_categories').delete().eq('id', id)
+    if (error) {
+      alert(`Не удалось удалить категорию: ${error.message}`)
+      return
+    }
+    useReferenceStore.getState().invalidateReferences()
     loadAllData()
   }
   
   async function addFertilizer() {
     if (!newFertilizer.plant_id || !newFertilizer.name) return alert('Заполните поля')
-    await supabase.from('fertilizers').insert(newFertilizer)
+    const { error } = await supabase.from('fertilizers').insert(newFertilizer)
+    if (error) {
+      alert(`Не удалось добавить удобрение: ${error.message}`)
+      return
+    }
     setShowFertilizerForm(false)
     setNewFertilizer({ plant_id: '', name: '', type: 'complex', application_stage: '', description: '' })
     loadAllData()
   }
   
   async function deleteFertilizer(id) {
-    await supabase.from('fertilizers').delete().eq('id', id)
+    const { error } = await supabase.from('fertilizers').delete().eq('id', id)
+    if (error) {
+      alert(`Не удалось удалить удобрение: ${error.message}`)
+      return
+    }
     loadAllData()
   }
   
   async function addIssue() {
     if (!newIssue.plant_id || !newIssue.name) return alert('Заполните поля')
-    await supabase.from('plant_issues').insert(newIssue)
+    const { error } = await supabase.from('plant_issues').insert(newIssue)
+    if (error) {
+      alert(`Не удалось добавить проблему растения: ${error.message}`)
+      return
+    }
     setShowIssueForm(false)
     setNewIssue({ plant_id: '', name: '', type: 'disease', symptoms: '', treatment: '', prevention: '' })
     loadAllData()
   }
   
   async function deleteIssue(id) {
-    await supabase.from('plant_issues').delete().eq('id', id)
+    const { error } = await supabase.from('plant_issues').delete().eq('id', id)
+    if (error) {
+      alert(`Не удалось удалить проблему растения: ${error.message}`)
+      return
+    }
     loadAllData()
   }
   
@@ -209,6 +241,12 @@ export default function AdminPanel() {
           </div>
           <Link to="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">← На главную</Link>
         </div>
+
+        {adminError && (
+          <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {adminError}
+          </div>
+        )}
         
         {/* Статистика */}
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
@@ -275,7 +313,11 @@ export default function AdminPanel() {
                                 onClick={async () => {
                                   const action = isBlocked ? 'разблокировать' : 'заблокировать'
                                   if (!confirm(`${action === 'заблокировать' ? 'Заблокировать' : 'Разблокировать'} пользователя ${u.email}?`)) return
-                                  await supabase.from('profiles').update({ is_blocked: !isBlocked }).eq('id', u.id)
+                                  const { error } = await supabase.from('profiles').update({ is_blocked: !isBlocked }).eq('id', u.id)
+                                  if (error) {
+                                    alert(`Не удалось изменить статус пользователя: ${error.message}`)
+                                    return
+                                  }
                                   loadAllData()
                                 }}
                                 className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${

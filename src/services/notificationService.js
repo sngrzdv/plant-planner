@@ -1,5 +1,3 @@
-import { supabase } from '../lib/supabase'
-
 class NotificationService {
   constructor() {
     this.permission = 'default'

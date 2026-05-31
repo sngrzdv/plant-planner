@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 
-const CACHE_TTL_MS = 5 * 60 * 1000
+const CACHE_TTL_MS = 30 * 60 * 1000
+const PLANT_LIST_COLUMNS = 'id, name, category_id, image_url, watering_freq_days, maturation_days, planting_method, days_to_transplant, difficulty, description, scientific_facts'
 
 function isFresh(timestamp) {
   return Date.now() - timestamp < CACHE_TTL_MS
@@ -26,7 +27,7 @@ export const useReferenceStore = create((set, get) => ({
 
     const request = supabase
       .from('plants')
-      .select('*')
+      .select(PLANT_LIST_COLUMNS)
       .order('name')
       .then(({ data, error }) => {
         if (error) return []
@@ -68,9 +69,10 @@ export const useReferenceStore = create((set, get) => ({
     return request
   },
 
-  preloadReferences: async () => {
+  preloadReferences: () => {
     const { getPlants, getCategories } = get()
-    await Promise.all([getPlants(), getCategories()])
+    void getPlants()
+    void getCategories()
   },
 
   invalidateReferences: () => {

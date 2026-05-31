@@ -26,6 +26,16 @@ function setCachedWeather(key, data) {
   }
 }
 
+async function fetchWithTimeout(url, timeoutMs = 2500) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 export const weatherApi = {
   // Получить погоду по координатам
   async getWeatherByCoords(lat, lon) {
@@ -35,14 +45,14 @@ export const weatherApi = {
     if (cached) return cached
     try {
       const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&lang=ru&appid=${API_KEY}&units=metric`
-      const response = await fetch(url)
+      const response = await fetchWithTimeout(url)
       if (!response.ok) throw new Error('Ошибка')
       const data = await response.json()
       const formatted = this.formatWeather(data)
       setCachedWeather(cacheKey, formatted)
       return formatted
     } catch (err) {
-      console.error('Ошибка погоды:', err)
+      console.debug('Ошибка погоды:', err)
       return null
     }
   },
@@ -56,14 +66,14 @@ export const weatherApi = {
     if (cached) return cached
     try {
       const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&lang=ru&appid=${API_KEY}&units=metric`
-      const response = await fetch(url)
+      const response = await fetchWithTimeout(url)
       if (!response.ok) throw new Error('Город не найден')
       const data = await response.json()
       const formatted = this.formatWeather(data)
       setCachedWeather(cacheKey, formatted)
       return formatted
     } catch (err) {
-      console.error('Ошибка погоды:', err)
+      console.debug('Ошибка погоды:', err)
       return null
     }
   },

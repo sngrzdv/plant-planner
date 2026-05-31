@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import lunarService from '../services/lunarService'
 import { getMoonData, getMoonZodiac } from '../utils/lunar'
@@ -27,15 +27,11 @@ export default function LunarCalendar() {
   const [month, setMonth] = useState(today.getMonth())
   const [year, setYear] = useState(today.getFullYear())
   const [crop, setCrop] = useState(null)
-  const [calendar, setCalendar] = useState([])
-  const [loading, setLoading] = useState(true)
   const [selectedDay, setSelectedDay] = useState(null)
 
-  useEffect(() => {
-    setLoading(true)
+  const calendar = useMemo(() => {
     const result = lunarService.getCalendarWithRecommendations(year, month, crop)
-    if (result.success) setCalendar(result.data)
-    setLoading(false)
+    return result.success ? result.data : []
   }, [year, month, crop])
 
   const prevMonth = () => {
@@ -75,12 +71,6 @@ export default function LunarCalendar() {
   }
 
   const grid = getDaysInGrid()
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-    </div>
-  )
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 pb-20 sm:pb-0">

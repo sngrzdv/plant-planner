@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -17,9 +17,7 @@ export default function MyGardens() {
   const [photoPreview, setPhotoPreview] = useState(null)
   const [uploading, setUploading] = useState(false)
 
-  useEffect(() => { loadGardens() }, [])
-
-  async function loadGardens() {
+  const loadGardens = useCallback(async () => {
     const { data } = await supabase
       .from('layouts')
       .select('*')
@@ -27,7 +25,12 @@ export default function MyGardens() {
       .order('created_at', { ascending: false })
     if (data) setGardens(data)
     setLoading(false)
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadGardens()
+  }, [loadGardens])
 
   function handlePhotoSelect(e) {
     const file = e.target.files[0]
@@ -54,7 +57,7 @@ export default function MyGardens() {
     
     if (error) {
       console.error('Ошибка загрузки фото:', error)
-      return null
+      throw new Error(`Не удалось загрузить фото: ${error.message}`)
     }
     
     const { data: urlData } = supabase.storage
@@ -68,42 +71,45 @@ export default function MyGardens() {
     if (!newGarden.name.trim()) return alert('Введите название')
     
     setUploading(true)
-    
-    let imageUrl = null
-    if (photo) {
-      imageUrl = await uploadPhoto(photo)
-    }
-    
-    const { data, error } = await supabase
-      .from('layouts')
-      .insert({
-        user_id: user.id,
-        name: newGarden.name,
-        location: newGarden.location,
-        image_url: imageUrl,
-        width: 3000,
-        height: 2000
-      })
-      .select()
-      .single()
-    
-    setUploading(false)
-    
-    if (!error && data) {
+
+    try {
+      const imageUrl = photo ? await uploadPhoto(photo) : null
+      const { data, error } = await supabase
+        .from('layouts')
+        .insert({
+          user_id: user.id,
+          name: newGarden.name,
+          location: newGarden.location,
+          image_url: imageUrl,
+          width: 3000,
+          height: 2000
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      if (!data) throw new Error('Supabase не вернул созданный участок')
+
       setGardens([data, ...gardens])
       setShowModal(false)
       setNewGarden({ name: '', location: '' })
       setPhoto(null)
       setPhotoPreview(null)
       navigate(`/garden/${data.id}/edit`)
-    } else {
-      alert('Ошибка при создании: ' + error?.message)
+    } catch (error) {
+      alert(`Ошибка при создании: ${error.message}`)
+    } finally {
+      setUploading(false)
     }
   }
 
   async function deleteGarden(id) {
     if (!confirm('Удалить участок, все зоны и растения на нём?')) return
-    await supabase.from('layouts').delete().eq('id', id)
+    const { error } = await supabase.from('layouts').delete().eq('id', id)
+    if (error) {
+      alert(`Не удалось удалить участок: ${error.message}`)
+      return
+    }
     setGardens(gardens.filter(g => g.id !== id))
   }
 

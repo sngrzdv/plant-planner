@@ -64,7 +64,7 @@ export default function BedEditor() {
   const [selectedPlantInfo, setSelectedPlantInfo] = useState(null)
   const [showPlantInfo, setShowPlantInfo] = useState(false)
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     const { data: b } = await supabase.from('beds').select('*').eq('id', id).single()
     if (b) {
       setBed(b)
@@ -92,18 +92,34 @@ export default function BedEditor() {
     if (ap) setAllPlants(ap)
 
     setLoading(false)
-  }
-
-  useEffect(() => {
-    loadData()
-    const hasSeenTutorial = localStorage.getItem('bedEditorTutorial')
-    if (!hasSeenTutorial) {
-      setTimeout(() => setShowTutorial(true), 1500)
-    }
   }, [id])
 
+  useEffect(() => {
+    let mounted = true
+    let tutorialTimer
+
+    const init = async () => {
+      await loadData()
+      if (!mounted) return
+      const hasSeenTutorial = localStorage.getItem('bedEditorTutorial')
+      if (!hasSeenTutorial) {
+        tutorialTimer = setTimeout(() => setShowTutorial(true), 1500)
+      }
+    }
+
+    void init()
+    return () => {
+      mounted = false
+      if (tutorialTimer) clearTimeout(tutorialTimer)
+    }
+  }, [loadData])
+
   async function applyGardenSize(width, height) {
-    await supabase.from('beds').update({ soil_width: width, soil_height: height }).eq('id', id)
+    const { error } = await supabase.from('beds').update({ soil_width: width, soil_height: height }).eq('id', id)
+    if (error) {
+      alert(`Не удалось сохранить размер поля: ${error.message}`)
+      return
+    }
     setGardenWidth(width)
     setGardenHeight(height)
     setBed({ ...bed, soil_width: width, soil_height: height })
@@ -153,11 +169,19 @@ export default function BedEditor() {
       bed_id: id, type: 'row', name: 'Грядка',
       pos_x: x, pos_y: y, width: w, height: h, color: '#6B4226', planted_year: currentYear
     }).select().single()
-    if (!error && data) setBeds([...beds, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
+    if (error) {
+      alert(`Не удалось добавить грядку: ${error.message}`)
+      return
+    }
+    if (data) setBeds([...beds, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
   }
 
   async function deleteSubBed(bedId) {
-    await supabase.from('bed_elements').delete().eq('id', bedId)
+    const { error } = await supabase.from('bed_elements').delete().eq('id', bedId)
+    if (error) {
+      alert(`Не удалось удалить грядку: ${error.message}`)
+      return
+    }
     setBeds(beds.filter(r => r.id !== bedId))
     setSelectedSubBed(null)
   }
@@ -189,10 +213,20 @@ export default function BedEditor() {
     })
     setBedPlants(updatedPlants)
 
-    await supabase.from('bed_elements').update({ pos_x: Math.round(x), pos_y: Math.round(y), width: snappedW, height: snappedH }).eq('id', bedId)
+    const { error } = await supabase.from('bed_elements').update({ pos_x: Math.round(x), pos_y: Math.round(y), width: snappedW, height: snappedH }).eq('id', bedId)
+    if (error) {
+      alert(`Не удалось сохранить грядку: ${error.message}`)
+      setBeds(beds)
+      setBedPlants(bedPlants)
+      return
+    }
     for (const plant of updatedPlants) {
       if (plant._x !== bedPlants.find(bp => bp.id === plant.id)?._x) {
-        await supabase.from('bed_elements').update({ pos_x: Math.round(plant._x), pos_y: Math.round(plant._y) }).eq('id', plant.id)
+        const { error: plantError } = await supabase.from('bed_elements').update({ pos_x: Math.round(plant._x), pos_y: Math.round(plant._y) }).eq('id', plant.id)
+        if (plantError) {
+          alert(`Не удалось сохранить положение растения: ${plantError.message}`)
+          break
+        }
       }
     }
   }
@@ -210,10 +244,18 @@ export default function BedEditor() {
       color: '#4ADE80', plant_id: plant.id, planted_year: currentYear
     }).select('*, plant:plant_id(id, name, image_url, watering_freq_days, maturation_days, planting_method, difficulty, scientific_facts)').single()
 
-    if (!error && data) {
+    if (error) {
+      alert(`Не удалось посадить растение: ${error.message}`)
+    } else if (data) {
       setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
-      if (user) await reminderService.generateForPlant(user.id, plant, 'planted', new Date().toISOString().split('T')[0])
+      if (user) {
+        try {
+          await reminderService.generateForPlant(user.id, plant, 'planted', new Date().toISOString().split('T')[0])
+        } catch (reminderError) {
+          console.warn('Не удалось создать напоминания:', reminderError)
+        }
+      }
     }
     setShowPlantModal(false)
     setSelectedCell(null)
@@ -241,10 +283,18 @@ export default function BedEditor() {
       color: '#4ADE80', plant_id: plant.id, planted_year: currentYear
     }).select('*, plant:plant_id(id, name, image_url, watering_freq_days, maturation_days, planting_method, difficulty, scientific_facts)').single()
 
-    if (!error && data) {
+    if (error) {
+      alert(`Не удалось посадить растение: ${error.message}`)
+    } else if (data) {
       setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
-      if (user) await reminderService.generateForPlant(user.id, plant, 'planted', new Date().toISOString().split('T')[0])
+      if (user) {
+        try {
+          await reminderService.generateForPlant(user.id, plant, 'planted', new Date().toISOString().split('T')[0])
+        } catch (reminderError) {
+          console.warn('Не удалось создать напоминания:', reminderError)
+        }
+      }
     }
   }
 
@@ -345,7 +395,7 @@ export default function BedEditor() {
             <span className="text-xs w-11 text-center font-medium text-gray-700">{Math.round(scale * 100)}%</span>
             <Tooltip text="Увеличить"><button onClick={() => setScale(s => Math.min(2, s + 0.1))} className="p-1.5 hover:bg-white rounded-lg transition-colors"><Plus className="w-3.5 h-3.5 text-gray-600" /></button></Tooltip>
           </div>
-          <Tooltip text="Сохранить изменения"><button onClick={() => alert('✅ Все изменения сохранены!')} className="flex items-center gap-1.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-medium hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg shadow-green-500/20 active:scale-98"><Save className="w-3.5 h-3.5" /> Сохранить</button></Tooltip>
+          <Tooltip text="Изменения сохраняются сразу после действия"><button type="button" disabled className="flex items-center gap-1.5 bg-gray-100 text-gray-500 px-4 py-2 rounded-xl text-xs font-medium cursor-default"><Save className="w-3.5 h-3.5" /> Автосохранение</button></Tooltip>
         </div>
       </header>
 
@@ -567,13 +617,16 @@ export default function BedEditor() {
                   className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">
                   📖 Подробнее о растении
                 </Link>
-                <button onClick={() => {
+                <button onClick={async () => {
                   if (confirm(`Удалить ${selectedPlantInfo.plant?.name || 'растение'}?`)) {
-                    supabase.from('bed_elements').delete().eq('id', selectedPlantInfo.id).then(() => {
-                      setBedPlants(bedPlants.filter(p => p.id !== selectedPlantInfo.id))
-                      setShowPlantInfo(false)
-                      setSelectedPlantInfo(null)
-                    })
+                    const { error } = await supabase.from('bed_elements').delete().eq('id', selectedPlantInfo.id)
+                    if (error) {
+                      alert(`Не удалось удалить растение: ${error.message}`)
+                      return
+                    }
+                    setBedPlants(bedPlants.filter(p => p.id !== selectedPlantInfo.id))
+                    setShowPlantInfo(false)
+                    setSelectedPlantInfo(null)
                   }
                 }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors">
                   <Trash2 className="w-4 h-4" /> Удалить растение
