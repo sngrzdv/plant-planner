@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 
-const PROFILE_CACHE_KEY = 'pp_profile_v1'
+const PROFILE_CACHE_KEY = 'pp_profile_v2'
 
 function sanitizeCachedProfile(profile) {
   if (!profile) return null
@@ -13,6 +13,8 @@ function sanitizeCachedProfile(profile) {
     role_id: profile.role_id,
     is_blocked: profile.is_blocked,
     notification_enabled: profile.notification_enabled,
+    email_notifications_enabled: profile.email_notifications_enabled,
+    avatar_url: profile.avatar_url,
     created_at: profile.created_at,
   }
 }
@@ -81,7 +83,7 @@ export const useAuthStore = create((set, get) => ({
 
     const request = supabase
       .from('profiles')
-      .select('id, email, full_name, city, role_id, is_blocked, notification_enabled, created_at')
+      .select('id, email, full_name, city, role_id, is_blocked, notification_enabled, email_notifications_enabled, avatar_url, created_at')
       .eq('id', userId)
       .single()
       .then(({ data, error }) => {

@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Save, Mail, MapPin, Shield, Bell, LogOut } from 'lucide-react'
 import ChangePasswordPanel from './ChangePasswordPanel'
+import ChangeEmailPanel from './ChangeEmailPanel'
+import ProfileAvatarUpload from './ProfileAvatarUpload'
 
 export default function ProfileAccountPanel({
   profile,
@@ -14,6 +16,7 @@ export default function ProfileAccountPanel({
   saved,
   onSave,
   onSignOut,
+  onProfileUpdate,
 }) {
   const memberDate = profile?.created_at
     ? new Date(profile.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -23,6 +26,8 @@ export default function ProfileAccountPanel({
     <div className="space-y-4 sm:space-y-6">
       <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 space-y-5">
         <h3 className="font-semibold text-gray-800">Личные данные</h3>
+
+        <ProfileAvatarUpload profile={profile} onUpdated={onProfileUpdate} />
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Имя</label>
@@ -46,7 +51,7 @@ export default function ProfileAccountPanel({
               className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 cursor-not-allowed"
             />
           </div>
-          <p className="text-xs text-gray-400 mt-1">Email изменяется через поддержку</p>
+          <ChangeEmailPanel currentEmail={profile?.email} />
         </div>
 
         <div>
@@ -82,7 +87,7 @@ export default function ProfileAccountPanel({
           <InfoRow label="Дата регистрации" value={memberDate} />
           <InfoRow label="Роль" value={isAdmin ? 'Администратор' : 'Садовод'} />
           <InfoRow
-            label="Уведомления"
+            label="Push-уведомления"
             value={notifications ? 'Включены' : 'Выключены'}
             icon={Bell}
           />

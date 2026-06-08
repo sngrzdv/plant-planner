@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { MapPin, Shield, Calendar, User } from 'lucide-react'
+import { MapPin, Shield, Calendar } from 'lucide-react'
 
 export default function ProfileHero({ profile, isAdmin }) {
   const initial = (profile?.full_name || profile?.email || 'П')[0].toUpperCase()
@@ -16,8 +16,12 @@ export default function ProfileHero({ profile, isAdmin }) {
 
       <div className="relative px-4 sm:px-6 py-5 sm:py-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] bg-green-100 rounded-2xl flex items-center justify-center shrink-0 border border-green-200/60">
-            <span className="text-2xl sm:text-3xl font-bold text-green-700">{initial}</span>
+          <div className="w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] rounded-2xl overflow-hidden bg-green-100 flex items-center justify-center shrink-0 border border-green-200/60">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-2xl sm:text-3xl font-bold text-green-700">{initial}</span>
+            )}
           </div>
 
           <div className="flex-1 min-w-0">
@@ -53,12 +57,6 @@ export default function ProfileHero({ profile, isAdmin }) {
               </span>
             )}
           </div>
-        )}
-
-        {!profile?.city && !memberSince && (
-          <p className="mt-3 text-xs text-gray-400 flex items-center gap-1">
-            <User className="w-3.5 h-3.5" /> Личный кабинет
-          </p>
         )}
       </div>
     </div>

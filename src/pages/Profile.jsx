@@ -24,6 +24,7 @@ export default function Profile() {
   const [fullName, setFullName] = useState(profile?.full_name || '')
   const [city, setCity] = useState(profile?.city || '')
   const [notifications, setNotifications] = useState(profile?.notification_enabled ?? true)
+  const [emailNotifications, setEmailNotifications] = useState(profile?.email_notifications_enabled ?? false)
   const [lunarEnabled, setLunarEnabled] = useState(() => loadProfilePrefs().lunarEnabled)
   const [weatherAlerts, setWeatherAlerts] = useState(() => loadProfilePrefs().weatherAlerts)
   const [saving, setSaving] = useState(false)
@@ -33,7 +34,8 @@ export default function Profile() {
     setFullName(profile?.full_name || '')
     setCity(profile?.city || '')
     setNotifications(profile?.notification_enabled ?? true)
-  }, [profile?.full_name, profile?.city, profile?.notification_enabled])
+    setEmailNotifications(profile?.email_notifications_enabled ?? false)
+  }, [profile?.full_name, profile?.city, profile?.notification_enabled, profile?.email_notifications_enabled])
 
   const loadStats = useCallback(async () => {
     setLoading(true)
@@ -63,6 +65,7 @@ export default function Profile() {
     const updates = {
       full_name: fullName,
       notification_enabled: notifications,
+      email_notifications_enabled: emailNotifications,
       city: city.trim() || null,
     }
 
@@ -154,6 +157,7 @@ export default function Profile() {
             saved={saved}
             onSave={saveProfile}
             onSignOut={signOut}
+            onProfileUpdate={setProfile}
           />
         )}
 
@@ -180,12 +184,10 @@ export default function Profile() {
                 />
                 <ToggleRow
                   icon={Mail}
-                  title="Email-уведомления"
-                  desc="Письма о задачах и событиях"
-                  enabled={false}
-                  disabled
-                  badge="Скоро"
-                  onChange={() => toast.info('Email-уведомления в разработке')}
+                  title="Email-напоминания"
+                  desc="Дайджест задач на главной с кнопкой «Открыть в почте»"
+                  enabled={emailNotifications}
+                  onChange={() => setEmailNotifications(!emailNotifications)}
                 />
               </div>
             </div>

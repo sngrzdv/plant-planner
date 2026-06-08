@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuthStore } from '../store/authStore'
 import { ArrowLeft, Droplets, Calendar, Sprout, Shield, FlaskRound as Flask, Bug } from 'lucide-react'
 import PlantImage from '../components/PlantImage'
+import FavoriteButton from '../components/FavoriteButton'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 import PageNotFound from '../components/PageNotFound'
+import { fetchFavoritePlantIds, togglePlantFavorite } from '../services/plantFavoritesService'
 
 export default function PlantDetail() {
   const { id } = useParams()
+  const { user } = useAuthStore()
   const [plant, setPlant] = useState(null)
+  const [isFavorite, setIsFavorite] = useState(false)
   const [varieties, setVarieties] = useState([])
   const [companions, setCompanions] = useState([])
   const [fertilizers, setFertilizers] = useState([])
@@ -57,6 +62,23 @@ export default function PlantDetail() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPlant()
   }, [loadPlant])
+
+  useEffect(() => {
+    if (!user?.id || !plant?.id) {
+      setIsFavorite(false)
+      return
+    }
+    fetchFavoritePlantIds(user.id)
+      .then((ids) => setIsFavorite(ids.has(Number(plant.id))))
+      .catch(() => setIsFavorite(false))
+  }, [user?.id, plant?.id])
+
+  async function handleFavoriteToggle(plantId) {
+    if (!user?.id) throw new Error('Войдите в аккаунт')
+    const added = await togglePlantFavorite(user.id, plantId)
+    setIsFavorite(added)
+    return added
+  }
   
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -93,18 +115,25 @@ export default function PlantDetail() {
             <PlantImage
               src={plant.image_url}
               alt={plant.name}
-              className="w-32 h-32 rounded-xl object-cover"
-              fallbackClassName="w-32 h-32 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex flex-col items-center justify-center gap-2"
+              className="w-32 h-32 rounded-xl object-cover shrink-0"
+              fallbackClassName="w-32 h-32 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex flex-col items-center justify-center gap-2 shrink-0"
             />
-            <div>
-              <h1 className="text-3xl font-bold text-gray-800">{plant.name}</h1>
-              <p className="text-gray-500 flex items-center gap-1 mt-1">
-                <span>{plant.category?.icon}</span>
-                <span>{plant.category?.name}</span>
-              </p>
-              {plant.scientific_name && (
-                <p className="text-sm text-gray-400 italic mt-1">{plant.scientific_name}</p>
-              )}
+            <div className="flex-1 flex items-start justify-between gap-3">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">{plant.name}</h1>
+                <p className="text-gray-500 flex items-center gap-1 mt-1">
+                  <span>{plant.category?.icon}</span>
+                  <span>{plant.category?.name}</span>
+                </p>
+                {plant.scientific_name && (
+                  <p className="text-sm text-gray-400 italic mt-1">{plant.scientific_name}</p>
+                )}
+              </div>
+              <FavoriteButton
+                plantId={Number(plant.id)}
+                isFavorite={isFavorite}
+                onToggle={handleFavoriteToggle}
+              />
             </div>
           </div>
         </div>

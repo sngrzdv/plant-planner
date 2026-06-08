@@ -290,7 +290,7 @@ export default function AddUserPlant() {
           </button>
         </div>
         <p className="text-xs text-gray-400 mt-3 text-center">
-          Избранное для растений — скоро. Сейчас: дневник только у вас, каталог — после проверки админом.
+          Личный дневник — только у вас. Заявка в каталог — после проверки админом.
         </p>
       </div>
 

@@ -8,6 +8,7 @@ import {
   CheckCircle, BookOpen, Moon
 } from 'lucide-react'
 import Header from './components/Header'
+import EmailDigestBanner from './components/EmailDigestBanner'
 import { getMoonData } from './utils/lunar'
 import { notificationService } from './services/notificationService'
 import { useProfilePrefs } from './hooks/useProfilePrefs'
@@ -169,6 +170,8 @@ function Dashboard() {
   const [lunarAdvice] = useState(getLunarAdviceForToday)
   const [stats, setStats] = useState({ gardens: 0, pots: 0, tasks: 0, diary: 0 })
   const [todayTasks, setTodayTasks] = useState([])
+  const [pendingReminders, setPendingReminders] = useState([])
+  const [digestDismissed, setDigestDismissed] = useState(false)
   const [loadingTasks, setLoadingTasks] = useState(true)
   const [completingTask, setCompletingTask] = useState(null)
 
@@ -209,7 +212,7 @@ function Dashboard() {
         safeSupabaseQuery(
           supabase
             .from('reminders')
-            .select('id, due_date, status, type')
+            .select('id, title, due_date, status, type')
             .eq('user_id', userId)
             .eq('status', 'pending'),
           { data: [] }
@@ -231,6 +234,7 @@ function Dashboard() {
         diary: diaryCount.count || 0,
       })
       setTodayTasks(tasksResult.data || [])
+      setPendingReminders(remindersResult.data || [])
       setLoadingTasks(false)
 
       notificationService.runDashboardNotifications({
@@ -245,7 +249,7 @@ function Dashboard() {
     loadDashboard()
     const interval = setInterval(loadDashboard, 10 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [userId, profile?.city, profile?.notification_enabled, prefs.lunarEnabled, prefs.weatherAlerts, lunarAdvice])
+  }, [userId, profile?.city, profile?.notification_enabled, profile?.email_notifications_enabled, prefs.lunarEnabled, prefs.weatherAlerts, lunarAdvice])
 
   async function completeTask(taskId) {
     setCompletingTask(taskId)
@@ -281,6 +285,14 @@ function Dashboard() {
           </h2>
           <p className="text-sm text-gray-600 mt-1">{new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
         </div>
+
+        {!digestDismissed && (
+          <EmailDigestBanner
+            profile={profile}
+            reminders={pendingReminders}
+            onDismiss={() => setDigestDismissed(true)}
+          />
+        )}
 
         {/* Погода + Лунный совет */}
         <div className={`grid grid-cols-1 gap-3 sm:gap-4 ${prefs.lunarEnabled ? 'sm:grid-cols-2' : ''}`}>

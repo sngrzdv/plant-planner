@@ -24,9 +24,13 @@ export default function Header() {
             </Link>
           )}
           <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-gray-200">
-            <Link to="/profile" className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-gray-200 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors">
-            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <User className="w-4 h-4 text-green-600" />
+            <Link to="/profile" className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors">
+            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center overflow-hidden shrink-0">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-4 h-4 text-green-600" />
+                )}
             </div>
             <span className="text-sm font-medium text-gray-700 hidden sm:block">
                 {profile?.full_name || 'Садовод'}

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { useReferenceStore } from '../store/referenceStore'
 import { 
-  Search, Sprout, Droplets, Calendar, X, Plus
+  Search, Sprout, Droplets, Calendar, X, Plus, Heart
 } from 'lucide-react'
 import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
@@ -13,9 +13,13 @@ import MobileNav from '../components/MobileNav'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
 import { uploadPlantImage } from '../services/plantImageStorage'
+import FavoriteButton from '../components/FavoriteButton'
+import { fetchFavoritePlantIds, togglePlantFavorite } from '../services/plantFavoritesService'
+
+const FAVORITES_SQL = 'supabase/plant_favorites_and_profile_extensions.sql'
 
 export default function PlantsCatalog() {
-  const { isAdmin } = useAuthStore()
+  const { isAdmin, user } = useAuthStore()
   const [plants, setPlants] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -27,6 +31,9 @@ export default function PlantsCatalog() {
   const [plantPhotoPreview, setPlantPhotoPreview] = useState(null)
   const [uploadingPlant, setUploadingPlant] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [favoriteIds, setFavoriteIds] = useState(new Set())
+  const [catalogFilter, setCatalogFilter] = useState('all')
+  const [favoritesError, setFavoritesError] = useState('')
   
   const [newPlant, setNewPlant] = useState({
     name: '', category_id: '', watering_freq_days: 3,
@@ -62,6 +69,33 @@ export default function PlantsCatalog() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!user?.id) {
+      setFavoriteIds(new Set())
+      return
+    }
+    fetchFavoritePlantIds(user.id)
+      .then(setFavoriteIds)
+      .catch((err) => {
+        setFavoritesError(err.message || 'Избранное недоступно')
+        setFavoriteIds(new Set())
+      })
+  }, [user?.id])
+
+  async function handleFavoriteToggle(plantId) {
+    if (!user?.id) {
+      throw new Error('Войдите в аккаунт, чтобы добавить в избранное')
+    }
+    const added = await togglePlantFavorite(user.id, plantId)
+    setFavoriteIds((prev) => {
+      const next = new Set(prev)
+      if (added) next.add(plantId)
+      else next.delete(plantId)
+      return next
+    })
+    return added
+  }
   
   function handlePlantPhotoSelect(e) {
     const file = e.target.files?.[0]
@@ -140,7 +174,8 @@ export default function PlantsCatalog() {
     const matchesSearch = plant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           plant.description?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = !selectedCategory || plant.category_id === selectedCategory
-    return matchesSearch && matchesCategory
+    const matchesFavorites = catalogFilter !== 'favorites' || favoriteIds.has(plant.id)
+    return matchesSearch && matchesCategory && matchesFavorites
   })
   
   if (loading) return (
@@ -154,6 +189,11 @@ export default function PlantsCatalog() {
       <Header />
       
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {favoritesError && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
+            Избранное: {favoritesError}. Выполните SQL: <code className="bg-amber-100 px-1 rounded">{FAVORITES_SQL}</code>
+          </div>
+        )}
         {loadError && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span>{loadError}</span>
@@ -205,7 +245,29 @@ export default function PlantsCatalog() {
                 <input type="text" placeholder="Поиск растений..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm" />
               </div>
-              <div className="flex gap-1.5 flex-wrap">
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter('all')}
+                  className={`px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
+                    catalogFilter === 'all' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Все
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter('favorites')}
+                  className={`px-3 py-2 rounded-xl text-xs font-medium transition-colors flex items-center gap-1 ${
+                    catalogFilter === 'favorites' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Heart className={`w-3.5 h-3.5 ${catalogFilter === 'favorites' ? 'fill-current' : ''}`} />
+                  Избранное {favoriteIds.size > 0 && `(${favoriteIds.size})`}
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-1.5 flex-wrap mb-4">
                 <button onClick={() => setSelectedCategory(null)}
                   className={`px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
                     !selectedCategory ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -221,7 +283,6 @@ export default function PlantsCatalog() {
                     <span className="hidden sm:inline">{cat.name}</span>
                   </button>
                 ))}
-              </div>
             </div>
             
             {/* Карточки растений */}
@@ -247,7 +308,7 @@ export default function PlantsCatalog() {
                     </div>
                     
                     {plant.difficulty && (
-                      <div className="absolute top-2 right-2">
+                      <div className="absolute top-2 right-12">
                         <span className={`text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm ${
                           plant.difficulty === 'Легко' ? 'bg-green-100/90 text-green-800' :
                           plant.difficulty === 'Средне' ? 'bg-amber-100/90 text-amber-800' :
@@ -257,6 +318,15 @@ export default function PlantsCatalog() {
                         </span>
                       </div>
                     )}
+
+                    <div className="absolute top-2 right-2">
+                      <FavoriteButton
+                        plantId={plant.id}
+                        isFavorite={favoriteIds.has(plant.id)}
+                        onToggle={handleFavoriteToggle}
+                        size="sm"
+                      />
+                    </div>
                   </div>
                   
                   <div className="p-4">
@@ -303,7 +373,9 @@ export default function PlantsCatalog() {
             {plants.length > 0 && filteredPlants.length === 0 && (
               <div className="text-center py-16">
                 <Sprout className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">По вашему запросу ничего не найдено</p>
+                <p className="text-gray-500">
+                  {catalogFilter === 'favorites' ? 'В избранном пока пусто' : 'По вашему запросу ничего не найдено'}
+                </p>
               </div>
             )}
           </>
