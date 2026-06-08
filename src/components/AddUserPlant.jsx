@@ -241,7 +241,7 @@ export default function AddUserPlant() {
                 src={photoPreview}
                 alt="Превью"
                 className="mt-2 w-full max-w-xs h-32 object-cover rounded-lg"
-                fallbackClassName="mt-2 w-32 h-32 rounded-lg bg-green-50 flex items-center justify-center"
+                fallbackClassName="mt-2 w-full max-w-xs h-32 rounded-lg"
               />
             )}
           </div>
@@ -318,7 +318,8 @@ export default function AddUserPlant() {
                       src={plant.image_url}
                       alt={plant.name}
                       className="w-16 h-16 rounded-lg object-cover shrink-0"
-                      fallbackClassName="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center"
+                      fallbackClassName="w-16 h-16 rounded-lg shrink-0"
+                      compact
                     />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-800 truncate">{plant.name}</p>

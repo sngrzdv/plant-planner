@@ -443,7 +443,7 @@ export default function BedEditor() {
                   className="flex items-center gap-2 p-2 rounded-lg hover:bg-green-50 cursor-grab active:cursor-grabbing transition-colors border border-transparent hover:border-green-200"
                   onClick={() => { if (selectedCell) plantInCell(plant) }}>
                   <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    <PlantImage src={plant.image_url} alt={plant.name} className="w-7 h-7 rounded object-cover" fallbackIcon={plant.category?.icon || '🌱'} fallbackClassName="w-7 h-7 rounded flex items-center justify-center text-sm" />
+                    <PlantImage src={plant.image_url} alt={plant.name} className="w-7 h-7 rounded object-cover" fallbackClassName="w-7 h-7 rounded" compact />
                   </div>
                   <div className="flex-1 min-w-0"><p className="text-[11px] font-medium truncate">{plant.name}</p><p className="text-[9px] text-gray-400">💧{plant.watering_freq_days}д 📅{plant.maturation_days}д</p></div>
                 </div>
@@ -511,8 +511,8 @@ export default function BedEditor() {
                                     src={plantInCell.plant?.image_url}
                                     alt={plantInCell.plant?.name}
                                     className="w-8 h-8 rounded-lg object-cover border border-white/30 shadow-sm"
-                                    fallbackIcon="🌱"
-                                    fallbackClassName="w-8 h-8 rounded-lg flex items-center justify-center text-xl drop-shadow-sm"
+                                    fallbackClassName="w-8 h-8 rounded-lg border border-white/30 shadow-sm"
+                                    compact
                                   />
                                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-gray-900/95 text-white text-[10px] rounded-lg opacity-0 group-hover/cell:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 shadow-lg border border-gray-700/50">
                                     {plantInCell.plant?.name}{plantInCell.planted_year && <span className="text-gray-400 ml-1">{plantInCell.planted_year}</span>}
@@ -554,8 +554,7 @@ export default function BedEditor() {
                   src={selectedPlantInfo.plant?.image_url}
                   alt={selectedPlantInfo.plant?.name}
                   className="w-full h-full object-cover"
-                  fallbackIcon={allPlants.find(p => p.id === selectedPlantInfo.plant_id)?.category?.icon || '🌱'}
-                  fallbackClassName="w-full h-full flex flex-col items-center justify-center text-center"
+                  fallbackClassName="w-full h-full"
                 />
               </div>
 
@@ -682,7 +681,7 @@ export default function BedEditor() {
               {filteredPlants.length === 0 ? <div className="text-center py-10 text-gray-400"><span className="text-4xl mb-3 block">🔍</span><p className="font-medium">Ничего не найдено</p></div> : filteredPlants.map(plant => (
                 <button key={plant.id} onClick={() => plantInCell(plant)} className="w-full flex items-center gap-3 p-3.5 rounded-2xl hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50/60 hover:border-green-200 border border-transparent text-left transition-all duration-200 group">
                   <div className="w-13 h-13 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-green-200/60 group-hover:scale-105 transition-transform shadow-sm">
-                    <PlantImage src={plant.image_url} alt={plant.name} className="w-full h-full object-cover" fallbackIcon={plant.category?.icon || '🌿'} fallbackClassName="w-full h-full flex items-center justify-center text-2xl" />
+                    <PlantImage src={plant.image_url} alt={plant.name} className="w-full h-full object-cover" fallbackClassName="w-full h-full" />
                   </div>
                   <div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-800 truncate">{plant.name}</p>
                     <div className="flex items-center gap-3 mt-1"><span className="text-xs text-gray-500 flex items-center gap-1">💧 {plant.watering_freq_days} дн.</span><span className="text-xs text-gray-500 flex items-center gap-1">📅 {plant.maturation_days} дн.</span>{plant.category?.name && <span className="text-xs text-gray-400">• {plant.category.name}</span>}</div>

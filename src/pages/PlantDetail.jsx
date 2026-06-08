@@ -116,7 +116,7 @@ export default function PlantDetail() {
               src={plant.image_url}
               alt={plant.name}
               className="w-32 h-32 rounded-xl object-cover shrink-0"
-              fallbackClassName="w-32 h-32 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex flex-col items-center justify-center gap-2 shrink-0"
+              fallbackClassName="w-32 h-32 rounded-xl shrink-0"
             />
             <div className="flex-1 flex items-start justify-between gap-3">
               <div>

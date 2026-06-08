@@ -525,8 +525,7 @@ export default function AdminPanel() {
                       src={plant.image_url}
                       alt={plant.name}
                       className="w-full h-full object-cover"
-                      fallbackIcon={plant.category?.icon || '🌱'}
-                      fallbackClassName="w-full h-full flex items-center justify-center text-4xl"
+                      fallbackClassName="w-full h-full"
                     />
                     {/* Бейдж */}
                     <div className="absolute top-2 left-2">
@@ -820,7 +819,7 @@ export default function AdminPanel() {
                     src={plantPhotoPreview || newPlant.image_url}
                     alt="Превью"
                     className="w-24 h-24 rounded-lg object-cover border border-gray-200"
-                    fallbackClassName="w-24 h-24 rounded-lg bg-green-50 flex items-center justify-center text-3xl"
+                    fallbackClassName="w-24 h-24 rounded-lg"
                   />
                   {newPlant.image_url && !plantPhotoFile && (
                     <p className="text-xs text-gray-500 pt-1 break-all">{resolvePlantImageUrl(newPlant.image_url)}</p>

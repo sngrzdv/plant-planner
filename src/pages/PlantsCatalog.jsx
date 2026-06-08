@@ -294,7 +294,7 @@ export default function PlantsCatalog() {
                       src={plant.image_url}
                       alt={plant.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      fallbackClassName="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 gap-2"
+                      fallbackClassName="w-full h-full"
                     />
                     
                     {/* Бейджи */}
@@ -456,7 +456,7 @@ export default function PlantsCatalog() {
                     src={plantPhotoPreview}
                     alt="Превью"
                     className="mt-2 w-full h-32 object-cover rounded-lg"
-                    fallbackClassName="mt-2 w-full h-32 rounded-lg bg-green-50 flex items-center justify-center"
+                    fallbackClassName="mt-2 w-full h-32 rounded-lg"
                   />
                 )}
               </div>

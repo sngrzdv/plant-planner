@@ -338,7 +338,7 @@ export default function GardenView() {
                 <div className="space-y-2">
                   {plants.map(p => (
                     <div key={p.id} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl">
-                      <PlantImage src={p.plants?.image_url} alt={p.plants?.name || ''} className="w-10 h-10 rounded-lg object-cover" fallbackIcon="🌱" fallbackClassName="w-10 h-10 rounded-lg flex items-center justify-center text-2xl" />
+                      <PlantImage src={p.plants?.image_url} alt={p.plants?.name || ''} className="w-10 h-10 rounded-lg object-cover" fallbackClassName="w-10 h-10 rounded-lg" compact />
                       <div>
                         <p className="font-medium text-sm">{p.plants?.name}</p>
                         <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
@@ -388,7 +388,7 @@ export default function GardenView() {
                   disabled={planting}
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-green-50 transition-colors text-left disabled:opacity-50 border border-transparent hover:border-green-200"
                 >
-                  <PlantImage src={plant.image_url} alt={plant.name} className="w-10 h-10 rounded-lg object-cover" fallbackIcon="🌱" fallbackClassName="w-10 h-10 rounded-lg flex items-center justify-center text-2xl" />
+                  <PlantImage src={plant.image_url} alt={plant.name} className="w-10 h-10 rounded-lg object-cover" fallbackClassName="w-10 h-10 rounded-lg" compact />
                   <div className="flex-1">
                     <p className="font-medium text-sm">{plant.name}</p>
                     <p className="text-xs text-gray-500">

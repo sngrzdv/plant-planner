@@ -187,7 +187,7 @@ export default function MyGardens() {
                       src={garden.image_url}
                       alt={garden.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      fallbackClassName="w-full h-full bg-gradient-to-br from-green-200 via-emerald-300 to-teal-400"
+                      fallbackClassName="w-full h-full"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-green-200 via-emerald-300 to-teal-400 flex items-center justify-center">

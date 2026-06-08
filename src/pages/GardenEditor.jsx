@@ -456,7 +456,7 @@ export default function GardenEditor() {
                 setSelectedZone({ ...selectedZone, plant_id: plant.id })
                 setShowPlantModal(false)
               }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-green-50 text-left">
-                <PlantImage src={plant.image_url} alt={plant.name} className="w-10 h-10 rounded-lg object-cover" fallbackIcon="🌱" fallbackClassName="w-10 h-10 rounded-lg flex items-center justify-center text-2xl" />
+                <PlantImage src={plant.image_url} alt={plant.name} className="w-10 h-10 rounded-lg object-cover" fallbackClassName="w-10 h-10 rounded-lg" compact />
                 <span className="font-medium text-sm">{plant.name}</span>
               </button>
             ))}

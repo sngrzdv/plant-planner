@@ -431,7 +431,7 @@ export default function Pots() {
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-start gap-3">
                           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${stage.bg}`}>
-                            <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center" />
+                            <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl" compact />
                           </div>
                           <div>
                             <h3 className="font-semibold text-gray-800">{pot.custom_name || pot.plants?.name}</h3>
@@ -484,7 +484,7 @@ export default function Pots() {
                 {transplantedPots.map(pot => (
                   <div key={pot.id} className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4">
                     <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-2xl">
-                      <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center" />
+                      <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl" compact />
                     </div>
                     <div className="flex-1">
                       <p className="font-semibold text-gray-800">{pot.custom_name || pot.plants?.name}</p>

@@ -1,13 +1,35 @@
 import { useState, useEffect } from 'react'
-import { Sprout } from 'lucide-react'
+import { ImageOff } from 'lucide-react'
 import { resolvePlantImageUrl } from '../lib/plantImageUrl'
+
+function NoPhotoPlaceholder({ className, label = 'Нет фото', compact = false }) {
+  return (
+    <div
+      className={`flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 text-gray-400 ${
+        compact ? 'gap-0' : 'flex-col gap-1.5'
+      } ${className}`}
+      role="img"
+      aria-label={label}
+    >
+      <ImageOff
+        className={compact ? 'w-3.5 h-3.5 opacity-60' : 'w-8 h-8 opacity-60'}
+        strokeWidth={1.5}
+        aria-hidden="true"
+      />
+      {!compact && (
+        <span className="text-[11px] font-medium tracking-wide uppercase opacity-70">{label}</span>
+      )}
+    </div>
+  )
+}
 
 export default function PlantImage({
   src,
   alt = '',
   className = '',
-  fallbackIcon,
   fallbackClassName = '',
+  fallbackLabel = 'Нет фото',
+  compact = false,
 }) {
   const [failed, setFailed] = useState(false)
   const resolved = resolvePlantImageUrl(src)
@@ -18,11 +40,11 @@ export default function PlantImage({
 
   if (!resolved || failed) {
     return (
-      <div className={`flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 ${fallbackClassName || className}`}>
-        {fallbackIcon
-          ? <span className="text-2xl" aria-hidden="true">{fallbackIcon}</span>
-          : <Sprout className="w-8 h-8 text-gray-400" aria-hidden="true" />}
-      </div>
+      <NoPhotoPlaceholder
+        className={fallbackClassName || className}
+        label={fallbackLabel}
+        compact={compact}
+      />
     )
   }
 
