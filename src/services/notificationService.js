@@ -1,9 +1,60 @@
 import { toast } from '../store/toastStore'
 
+const DAILY_NOTIFY_KEY = 'pp_notify_daily_v1'
+
 class NotificationService {
   constructor() {
     this.permission = 'default'
     this.swRegistration = null
+  }
+
+  _readDailyMarks() {
+    try {
+      const raw = localStorage.getItem(DAILY_NOTIFY_KEY)
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  _writeDailyMarks(marks) {
+    try {
+      localStorage.setItem(DAILY_NOTIFY_KEY, JSON.stringify(marks))
+    } catch {
+      // ignore quota errors
+    }
+  }
+
+  wasSentToday(tag) {
+    const today = new Date().toISOString().split('T')[0]
+    return this._readDailyMarks()[tag] === today
+  }
+
+  markSentToday(tag) {
+    const today = new Date().toISOString().split('T')[0]
+    const marks = this._readDailyMarks()
+    marks[tag] = today
+    this._writeDailyMarks(marks)
+  }
+
+  /** Фоновые push-уведомления при открытии главной (не чаще раза в день на тип). */
+  runDashboardNotifications({ profile, prefs, reminders, weather, lunarAdvice }) {
+    if (!profile?.notification_enabled || !this.isGranted()) return
+
+    if (!this.wasSentToday('tasks')) {
+      this.checkAndNotify(reminders)
+      this.markSentToday('tasks')
+    }
+
+    if (prefs?.weatherAlerts && weather && !this.wasSentToday('weather')) {
+      this.sendWeatherAlert(weather, reminders)
+      this.markSentToday('weather')
+    }
+
+    if (prefs?.lunarEnabled && lunarAdvice?.text && !this.wasSentToday('lunar')) {
+      this.sendLunarAdvice(lunarAdvice.text)
+      this.markSentToday('lunar')
+    }
   }
 
   // Запросить разрешение

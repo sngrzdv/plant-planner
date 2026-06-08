@@ -285,10 +285,13 @@ export default function AdminPanel() {
   }
   
   async function addFertilizer() {
-    if (!newFertilizer.plant_id || !newFertilizer.name) return alert('Заполните поля')
+    if (!newFertilizer.plant_id || !newFertilizer.name) {
+      toast.error('Заполните поля')
+      return
+    }
     const { error } = await supabase.from('fertilizers').insert(newFertilizer)
     if (error) {
-      alert(`Не удалось добавить удобрение: ${error.message}`)
+      toast.error(`Не удалось добавить удобрение: ${error.message}`)
       return
     }
     setShowFertilizerForm(false)
@@ -299,17 +302,20 @@ export default function AdminPanel() {
   async function deleteFertilizer(id) {
     const { error } = await supabase.from('fertilizers').delete().eq('id', id)
     if (error) {
-      alert(`Не удалось удалить удобрение: ${error.message}`)
+      toast.error(`Не удалось удалить удобрение: ${error.message}`)
       return
     }
     loadAllData()
   }
   
   async function addIssue() {
-    if (!newIssue.plant_id || !newIssue.name) return alert('Заполните поля')
+    if (!newIssue.plant_id || !newIssue.name) {
+      toast.error('Заполните поля')
+      return
+    }
     const { error } = await supabase.from('plant_issues').insert(newIssue)
     if (error) {
-      alert(`Не удалось добавить проблему растения: ${error.message}`)
+      toast.error(`Не удалось добавить проблему растения: ${error.message}`)
       return
     }
     setShowIssueForm(false)
@@ -320,7 +326,7 @@ export default function AdminPanel() {
   async function deleteIssue(id) {
     const { error } = await supabase.from('plant_issues').delete().eq('id', id)
     if (error) {
-      alert(`Не удалось удалить проблему растения: ${error.message}`)
+      toast.error(`Не удалось удалить проблему растения: ${error.message}`)
       return
     }
     loadAllData()

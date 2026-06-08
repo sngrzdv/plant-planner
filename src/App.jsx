@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-ro
 import { createElement, lazy, Suspense, useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
-import { useReferenceStore } from './store/referenceStore'
 import { 
   LayoutGrid, Flower, Calendar, 
   CheckCircle, BookOpen, Moon
@@ -11,6 +10,7 @@ import {
 import Header from './components/Header'
 import { getMoonData } from './utils/lunar'
 import { notificationService } from './services/notificationService'
+import { useProfilePrefs } from './hooks/useProfilePrefs'
 
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -162,11 +162,12 @@ function App() {
 
 function Dashboard() {
   const { user, profile } = useAuthStore()
+  const prefs = useProfilePrefs()
   const userId = user?.id
   const [weather, setWeather] = useState(null)
   const [weatherError, setWeatherError] = useState(false)
   const [lunarAdvice] = useState(getLunarAdviceForToday)
-  const [stats, setStats] = useState({ gardens: 0, pots: 0, tasks: 0, plants: 0 })
+  const [stats, setStats] = useState({ gardens: 0, pots: 0, tasks: 0, diary: 0 })
   const [todayTasks, setTodayTasks] = useState([])
   const [loadingTasks, setLoadingTasks] = useState(true)
   const [completingTask, setCompletingTask] = useState(null)
@@ -182,7 +183,8 @@ function Dashboard() {
         weatherData,
         statsResults,
         tasksResult,
-        plantsCount,
+        diaryCount,
+        remindersResult,
       ] = await Promise.all([
         weatherApi.getWeather(profile?.city || null).catch(() => null),
         Promise.all([
@@ -200,7 +202,18 @@ function Dashboard() {
             .limit(5),
           { data: [] }
         ),
-        useReferenceStore.getState().getPlants().then((list) => list.length).catch(() => 0),
+        safeSupabaseQuery(
+          supabase.from('user_plants').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+          { count: 0 }
+        ),
+        safeSupabaseQuery(
+          supabase
+            .from('reminders')
+            .select('id, due_date, status, type')
+            .eq('user_id', userId)
+            .eq('status', 'pending'),
+          { data: [] }
+        ),
       ])
 
       if (weatherData) {
@@ -215,16 +228,24 @@ function Dashboard() {
         gardens: gardens || 0,
         pots: pots || 0,
         tasks: tasks || 0,
-        plants: plantsCount || 0,
+        diary: diaryCount.count || 0,
       })
       setTodayTasks(tasksResult.data || [])
       setLoadingTasks(false)
+
+      notificationService.runDashboardNotifications({
+        profile,
+        prefs,
+        reminders: remindersResult.data || [],
+        weather: weatherData,
+        lunarAdvice,
+      })
     }
 
     loadDashboard()
     const interval = setInterval(loadDashboard, 10 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [userId, profile?.city])
+  }, [userId, profile?.city, profile?.notification_enabled, prefs.lunarEnabled, prefs.weatherAlerts, lunarAdvice])
 
   async function completeTask(taskId) {
     setCompletingTask(taskId)
@@ -262,7 +283,7 @@ function Dashboard() {
         </div>
 
         {/* Погода + Лунный совет */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+        <div className={`grid grid-cols-1 gap-3 sm:gap-4 ${prefs.lunarEnabled ? 'sm:grid-cols-2' : ''}`}>
           {weatherError ? (
             <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 text-center">
               <span className="text-2xl">🌧️</span>
@@ -270,10 +291,10 @@ function Dashboard() {
             </div>
           ) : weather ? (
             <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-3">
-              <img 
-                src={`https://openweathermap.org/img/wn/${weather.icon}@2x.png`} 
-                alt="иконка погоды" 
-                className="w-16 sm:w-20 h-16 sm:h-20" 
+              <img
+                src={`https://openweathermap.org/img/wn/${weather.icon}@2x.png`}
+                alt="иконка погоды"
+                className="w-16 sm:w-20 h-16 sm:h-20"
               />
               <div>
                 <p className="text-4xl sm:text-5xl font-light">{weather.temp}°</p>
@@ -289,11 +310,13 @@ function Dashboard() {
               <div className="h-16 bg-gray-200 rounded"></div>
             </div>
           )}
-          
-          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-4">
-            <span className="text-4xl" role="img" aria-label="луна">{lunarAdvice.emoji}</span>
-            <p className="text-sm text-gray-600 leading-relaxed">{lunarAdvice.text}</p>
-          </div>
+
+          {prefs.lunarEnabled && (
+            <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-4">
+              <span className="text-4xl" role="img" aria-label="луна">{lunarAdvice.emoji}</span>
+              <p className="text-sm text-gray-600 leading-relaxed">{lunarAdvice.text}</p>
+            </div>
+          )}
         </div>
 
         {/* Статистика — только на компьютере и планшете */}
@@ -301,7 +324,7 @@ function Dashboard() {
           <StatCard title="Мои участки" value={stats.gardens} icon={LayoutGrid} color="bg-blue-500" link="/gardens" />
           <StatCard title="Рассада" value={stats.pots} icon={Flower} color="bg-amber-500" link="/pots" />
           <StatCard title="Задачи" value={stats.tasks} icon={Calendar} color={stats.tasks > 0 ? 'bg-red-500' : 'bg-gray-400'} link="/reminders" />
-          <StatCard title="Каталог" value={stats.plants} icon={BookOpen} color="bg-green-500" link="/catalog" />
+          <StatCard title="Мой дневник" value={stats.diary} icon={BookOpen} color="bg-green-500" link="/catalog" />
         </div>
 
         {/* Задачи + Быстрые действия */}
