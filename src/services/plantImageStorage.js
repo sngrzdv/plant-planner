@@ -1,5 +1,6 @@
 import { uploadImage, slugifyFileName } from './imageStorage'
 import { supabase } from '../lib/supabase'
+import { storageObjectPath } from '../lib/plantImageUrl'
 
 const BUCKET = 'plant-images'
 
@@ -14,9 +15,7 @@ export async function uploadPlantImage(file, { plantId, plantName } = {}) {
 }
 
 export async function deletePlantImage(imageUrl) {
-  if (!imageUrl || !imageUrl.includes(`/storage/v1/object/public/${BUCKET}/`)) return
-
-  const path = imageUrl.split(`/storage/v1/object/public/${BUCKET}/`)[1]?.split('?')[0]
+  const path = storageObjectPath(imageUrl, BUCKET)
   if (!path) return
 
   const { error } = await supabase.storage.from(BUCKET).remove([path])

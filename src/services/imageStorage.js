@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { toCanonicalStorageUrl } from '../lib/plantImageUrl'
 import { getSupabaseAuthConfig } from '../lib/supabaseAuthConfig'
 
 const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'webp', 'gif']
@@ -96,7 +97,7 @@ async function tryUpload(client, bucket, path, file, options) {
   const { data, error } = await client.storage.from(bucket).upload(path, file, options)
   if (error) return { error }
   const { data: urlData } = client.storage.from(bucket).getPublicUrl(data.path)
-  return { publicUrl: urlData.publicUrl }
+  return { publicUrl: toCanonicalStorageUrl(urlData.publicUrl) }
 }
 
 /**

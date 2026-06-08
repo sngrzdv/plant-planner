@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sprout } from 'lucide-react'
 import { resolvePlantImageUrl } from '../lib/plantImageUrl'
 
@@ -11,6 +11,10 @@ export default function PlantImage({
 }) {
   const [failed, setFailed] = useState(false)
   const resolved = resolvePlantImageUrl(src)
+
+  useEffect(() => {
+    setFailed(false)
+  }, [src])
 
   if (!resolved || failed) {
     return (
