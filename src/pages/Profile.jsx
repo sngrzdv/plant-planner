@@ -2,7 +2,7 @@ import { createElement, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import {
-  BarChart3, User, Settings, Save, Bell, Moon, Sprout,
+  BarChart3, User, Settings, Bell, Moon, Sprout,
   MapPin, CloudRain, Mail, Download,
 } from 'lucide-react'
 import Header from '../components/Header'
@@ -10,9 +10,11 @@ import MobileNav from '../components/MobileNav'
 import ProfileHero from '../components/ProfileHero'
 import ProfileStatsPanel from '../components/ProfileStatsPanel'
 import ProfileAccountPanel from '../components/ProfileAccountPanel'
+import AutoSaveIndicator from '../components/AutoSaveIndicator'
 import { notificationService } from '../services/notificationService'
 import { fetchProfileStats } from '../services/profileStatsService'
-import { loadProfilePrefs, saveProfilePrefs } from '../lib/profilePrefs'
+import { profileToPrefs, saveProfilePrefs, prefsToDbColumns } from '../lib/profilePrefs'
+import { useAutoSave } from '../hooks/useAutoSave'
 import { toast } from '../store/toastStore'
 
 export default function Profile() {
@@ -25,17 +27,56 @@ export default function Profile() {
   const [city, setCity] = useState(profile?.city || '')
   const [notifications, setNotifications] = useState(profile?.notification_enabled ?? true)
   const [emailNotifications, setEmailNotifications] = useState(profile?.email_notifications_enabled ?? false)
-  const [lunarEnabled, setLunarEnabled] = useState(() => loadProfilePrefs().lunarEnabled)
-  const [weatherAlerts, setWeatherAlerts] = useState(() => loadProfilePrefs().weatherAlerts)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const initialPrefs = profileToPrefs(profile)
+  const [lunarEnabled, setLunarEnabled] = useState(initialPrefs.lunarEnabled)
+  const [weatherAlerts, setWeatherAlerts] = useState(initialPrefs.weatherAlerts)
 
   useEffect(() => {
     setFullName(profile?.full_name || '')
     setCity(profile?.city || '')
     setNotifications(profile?.notification_enabled ?? true)
     setEmailNotifications(profile?.email_notifications_enabled ?? false)
-  }, [profile?.full_name, profile?.city, profile?.notification_enabled, profile?.email_notifications_enabled])
+    const prefs = profileToPrefs(profile)
+    setLunarEnabled(prefs.lunarEnabled)
+    setWeatherAlerts(prefs.weatherAlerts)
+  }, [
+    profile?.id,
+    profile?.full_name,
+    profile?.city,
+    profile?.notification_enabled,
+    profile?.email_notifications_enabled,
+    profile?.lunar_enabled,
+    profile?.weather_alerts_enabled,
+  ])
+
+  const persistProfile = useCallback(async () => {
+    if (!profile?.id) return
+
+    const updates = {
+      full_name: fullName,
+      notification_enabled: notifications,
+      email_notifications_enabled: emailNotifications,
+      city: city.trim() || null,
+      ...prefsToDbColumns({ lunarEnabled, weatherAlerts }),
+    }
+
+    const { error } = await supabase.from('profiles').update(updates).eq('id', profile.id)
+    if (error) {
+      toast.error('Не удалось сохранить настройки')
+      throw error
+    }
+
+    saveProfilePrefs({ lunarEnabled, weatherAlerts })
+    setProfile({ ...profile, ...updates })
+  }, [profile, fullName, city, notifications, emailNotifications, lunarEnabled, weatherAlerts, setProfile])
+
+  const autoSaveStatus = useAutoSave({
+    save: persistProfile,
+    enabled: Boolean(profile?.id) && (activeTab === 'account' || activeTab === 'settings'),
+    delay: activeTab === 'account' ? 800 : 300,
+    resetKey: profile?.id,
+    deps: [fullName, city, notifications, emailNotifications, lunarEnabled, weatherAlerts, activeTab],
+  })
 
   const loadStats = useCallback(async () => {
     setLoading(true)
@@ -60,35 +101,6 @@ export default function Profile() {
     loadStats()
   }, [activeTab, loadStats])
 
-  async function saveProfile() {
-    setSaving(true)
-    const updates = {
-      full_name: fullName,
-      notification_enabled: notifications,
-      email_notifications_enabled: emailNotifications,
-      city: city.trim() || null,
-    }
-
-    const { error } = await supabase.from('profiles').update(updates).eq('id', profile.id)
-
-    if (!error) {
-      setProfile({ ...profile, ...updates })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-      toast.success('Профиль сохранён')
-    } else {
-      toast.error('Не удалось сохранить профиль')
-    }
-    setSaving(false)
-  }
-
-  function saveLocalPrefs(next) {
-    saveProfilePrefs({
-      lunarEnabled: next.lunarEnabled ?? lunarEnabled,
-      weatherAlerts: next.weatherAlerts ?? weatherAlerts,
-    })
-  }
-
   function exportStats() {
     if (!statsData) return
     const blob = new Blob([JSON.stringify({ ...statsData, exportedAt: new Date().toISOString() }, null, 2)], {
@@ -102,6 +114,27 @@ export default function Profile() {
     URL.revokeObjectURL(url)
   }
 
+  async function toggleNotifications() {
+    if (!notifications) {
+      const granted = await notificationService.requestPermission()
+      if (granted) setNotifications(true)
+    } else {
+      setNotifications(false)
+    }
+  }
+
+  function toggleLunar() {
+    const next = !lunarEnabled
+    setLunarEnabled(next)
+    saveProfilePrefs({ lunarEnabled: next, weatherAlerts })
+  }
+
+  function toggleWeatherAlerts() {
+    const next = !weatherAlerts
+    setWeatherAlerts(next)
+    saveProfilePrefs({ lunarEnabled, weatherAlerts: next })
+  }
+
   const tabs = [
     { key: 'account', label: 'Аккаунт', icon: User },
     { key: 'stats', label: 'Статистика', icon: BarChart3 },
@@ -113,16 +146,19 @@ export default function Profile() {
       <Header />
 
       <main className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-        <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <div className="flex items-center justify-between mb-4 sm:mb-6 gap-3">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Личный кабинет</h1>
-          {activeTab === 'stats' && statsData && (
-            <button
-              onClick={exportStats}
-              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
-            >
-              <Download className="w-4 h-4" /> Экспорт
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <AutoSaveIndicator status={autoSaveStatus} />
+            {activeTab === 'stats' && statsData && (
+              <button
+                onClick={exportStats}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
+              >
+                <Download className="w-4 h-4" /> Экспорт
+              </button>
+            )}
+          </div>
         </div>
 
         <ProfileHero profile={profile} isAdmin={isAdmin} />
@@ -153,9 +189,6 @@ export default function Profile() {
             city={city}
             setCity={setCity}
             notifications={notifications}
-            saving={saving}
-            saved={saved}
-            onSave={saveProfile}
             onSignOut={signOut}
             onProfileUpdate={setProfile}
           />
@@ -173,19 +206,12 @@ export default function Profile() {
                   title="Push-уведомления"
                   desc="Напоминания о задачах в браузере"
                   enabled={notifications}
-                  onChange={async () => {
-                    if (!notifications) {
-                      const granted = await notificationService.requestPermission()
-                      if (granted) setNotifications(true)
-                    } else {
-                      setNotifications(false)
-                    }
-                  }}
+                  onChange={toggleNotifications}
                 />
                 <ToggleRow
                   icon={Mail}
                   title="Email-напоминания"
-                  desc="Дайджест задач на главной с кнопкой «Открыть в почте»"
+                  desc="Дайджест задач на почту (если настроена Edge Function) или кнопка «Открыть в почте» на главной"
                   enabled={emailNotifications}
                   onChange={() => setEmailNotifications(!emailNotifications)}
                 />
@@ -202,25 +228,17 @@ export default function Profile() {
                   title="Лунный календарь"
                   desc="Показывать рекомендации по луне на главной"
                   enabled={lunarEnabled}
-                  onChange={() => {
-                    const next = !lunarEnabled
-                    setLunarEnabled(next)
-                    saveLocalPrefs({ lunarEnabled: next })
-                  }}
+                  onChange={toggleLunar}
                 />
                 <ToggleRow
                   icon={CloudRain}
                   title="Погодные предупреждения"
-                  desc="Уведомления о заморозках и неблагоприятной погоде"
+                  desc="Push-уведомления о заморозках и неблагоприятной погоде"
                   enabled={weatherAlerts}
-                  onChange={() => {
-                    const next = !weatherAlerts
-                    setWeatherAlerts(next)
-                    saveLocalPrefs({ weatherAlerts: next })
-                  }}
+                  onChange={toggleWeatherAlerts}
                 />
               </div>
-              <p className="text-xs text-gray-400 mt-3">Настройки садоводства сохраняются на этом устройстве</p>
+              <p className="text-xs text-gray-400 mt-3">Настройки синхронизируются с аккаунтом</p>
             </div>
 
             <div className="p-4 sm:p-6">
@@ -241,16 +259,6 @@ export default function Profile() {
                   Указать город →
                 </button>
               )}
-            </div>
-
-            <div className="p-4 sm:p-6">
-              <button
-                onClick={saveProfile}
-                disabled={saving}
-                className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-3 rounded-xl hover:bg-green-700 disabled:opacity-50 font-medium transition-colors"
-              >
-                {saving ? 'Сохранение...' : saved ? '✅ Настройки сохранены!' : <><Save className="w-5 h-5" /> Сохранить настройки</>}
-              </button>
             </div>
           </div>
         )}

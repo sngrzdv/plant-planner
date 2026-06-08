@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Save, Mail, MapPin, Shield, Bell, LogOut } from 'lucide-react'
+import { Mail, MapPin, Shield, Bell, LogOut } from 'lucide-react'
 import ChangePasswordPanel from './ChangePasswordPanel'
 import ChangeEmailPanel from './ChangeEmailPanel'
 import ProfileAvatarUpload from './ProfileAvatarUpload'
@@ -12,9 +12,6 @@ export default function ProfileAccountPanel({
   city,
   setCity,
   notifications,
-  saving,
-  saved,
-  onSave,
   onSignOut,
   onProfileUpdate,
 }) {
@@ -66,17 +63,8 @@ export default function ProfileAccountPanel({
               className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
             />
           </div>
-          <p className="text-xs text-gray-400 mt-1">Используется для прогноза погоды на главной</p>
+          <p className="text-xs text-gray-400 mt-1">Используется для прогноза погоды на главной. Сохраняется автоматически.</p>
         </div>
-
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 disabled:opacity-50 font-medium transition-colors"
-        >
-          {saving ? 'Сохранение...' : saved ? '✅ Сохранено!' : <><Save className="w-4 h-4" /> Сохранить изменения</>}
-        </button>
       </div>
 
       <ChangePasswordPanel email={profile?.email} />

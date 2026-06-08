@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { MapPin, Shield, Calendar } from 'lucide-react'
+import AvatarImage from './AvatarImage'
 
 export default function ProfileHero({ profile, isAdmin }) {
   const initial = (profile?.full_name || profile?.email || 'П')[0].toUpperCase()
@@ -17,11 +18,13 @@ export default function ProfileHero({ profile, isAdmin }) {
       <div className="relative px-4 sm:px-6 py-5 sm:py-6">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] rounded-2xl overflow-hidden bg-green-100 flex items-center justify-center shrink-0 border border-green-200/60">
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-2xl sm:text-3xl font-bold text-green-700">{initial}</span>
-            )}
+            <AvatarImage
+              src={profile?.avatar_url}
+              alt=""
+              className="w-full h-full object-cover"
+              initial={initial}
+              initialClassName="text-2xl sm:text-3xl font-bold text-green-700"
+            />
           </div>
 
           <div className="flex-1 min-w-0">

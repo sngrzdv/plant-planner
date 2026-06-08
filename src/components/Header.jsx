@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { Sprout, LogOut, User } from 'lucide-react'
+import { Sprout, LogOut } from 'lucide-react'
+import AvatarImage from './AvatarImage'
 
 export default function Header() {
   const { profile, signOut, isAdmin } = useAuthStore()
+  const initial = (profile?.full_name || profile?.email || 'С')[0].toUpperCase()
 
   return (
     <header className="bg-white/90 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-20">
@@ -26,11 +28,14 @@ export default function Header() {
           <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-gray-200">
             <Link to="/profile" className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors">
             <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center overflow-hidden shrink-0">
-                {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <User className="w-4 h-4 text-green-600" />
-                )}
+                <AvatarImage
+                  src={profile?.avatar_url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  initial={initial}
+                  initialClassName="text-sm font-bold text-green-700"
+                  iconClassName="w-4 h-4 text-green-600"
+                />
             </div>
             <span className="text-sm font-medium text-gray-700 hidden sm:block">
                 {profile?.full_name || 'Садовод'}

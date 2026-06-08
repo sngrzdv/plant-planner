@@ -182,18 +182,12 @@ export default function MyGardens() {
               >
                 {/* Фото участка */}
                 <div className="aspect-[4/3] relative overflow-hidden">
-                  {garden.image_url ? (
-                    <PlantImage
-                      src={garden.image_url}
-                      alt={garden.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      fallbackClassName="w-full h-full"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-green-200 via-emerald-300 to-teal-400 flex items-center justify-center">
-                      <Home className="w-20 h-20 text-white/30 group-hover:scale-110 transition-transform" />
-                    </div>
-                  )}
+                  <PlantImage
+                    src={garden.image_url}
+                    alt={garden.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    fallbackClassName="w-full h-full"
+                  />
                   
                   {/* Адрес */}
                   {garden.location && (

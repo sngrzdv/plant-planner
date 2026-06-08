@@ -220,9 +220,23 @@ export default function PlantDetail() {
                     c.relationship === 'good' ? 'bg-green-50' : 
                     c.relationship === 'bad' ? 'bg-red-50' : 'bg-gray-50'
                   }`}>
-                    <span className="text-2xl">{c.relationship === 'good' ? '✅' : c.relationship === 'bad' ? '❌' : '➖'}</span>
-                    <div>
-                      <p className="font-medium">{c.companion?.name}</p>
+                    <Link
+                      to={`/plant/${c.companion?.id}`}
+                      className="shrink-0"
+                    >
+                      <PlantImage
+                        src={c.companion?.image_url}
+                        alt={c.companion?.name || ''}
+                        className="w-12 h-12 rounded-lg object-cover"
+                        fallbackClassName="w-12 h-12 rounded-lg"
+                        compact
+                      />
+                    </Link>
+                    <span className="text-2xl shrink-0" aria-hidden="true">{c.relationship === 'good' ? '✅' : c.relationship === 'bad' ? '❌' : '➖'}</span>
+                    <div className="min-w-0">
+                      <Link to={`/plant/${c.companion?.id}`} className="font-medium hover:text-green-700">
+                        {c.companion?.name}
+                      </Link>
                       <p className="text-sm text-gray-600">{c.description}</p>
                     </div>
                   </div>

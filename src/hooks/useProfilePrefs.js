@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react'
-import { loadProfilePrefs } from '../lib/profilePrefs'
+import { useAuthStore } from '../store/authStore'
+import { loadProfilePrefs, profileToPrefs } from '../lib/profilePrefs'
 
-/** Локальные настройки профиля с синхронизацией между вкладками. */
+/** Настройки садоводства: из профиля (БД) или localStorage. */
 export function useProfilePrefs() {
-  const [prefs, setPrefs] = useState(loadProfilePrefs)
+  const profile = useAuthStore((s) => s.profile)
+  const [prefs, setPrefs] = useState(() => profileToPrefs(profile))
+
+  useEffect(() => {
+    setPrefs(profileToPrefs(profile))
+  }, [profile?.lunar_enabled, profile?.weather_alerts_enabled, profile?.id])
 
   useEffect(() => {
     const sync = () => setPrefs(loadProfilePrefs())

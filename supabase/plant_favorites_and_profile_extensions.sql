@@ -1,5 +1,5 @@
 -- Supabase Dashboard → SQL Editor → Run
--- Избранные растения, email-уведомления, bucket для аватаров
+-- Избранное, email-уведомления, prefs садоводства, bucket для аватаров
 
 -- -----------------------------------------------------------------------------
 -- 1. Избранное (каталог)
@@ -36,6 +36,15 @@ grant select, insert, delete on public.plant_favorites to authenticated;
 -- -----------------------------------------------------------------------------
 alter table public.profiles
   add column if not exists email_notifications_enabled boolean not null default false;
+
+alter table public.profiles
+  add column if not exists lunar_enabled boolean not null default true;
+
+alter table public.profiles
+  add column if not exists weather_alerts_enabled boolean not null default true;
+
+alter table public.profiles
+  add column if not exists last_email_digest_sent_at timestamptz;
 
 -- -----------------------------------------------------------------------------
 -- 3. Storage: avatars (public read, write only own folder user_id/*)

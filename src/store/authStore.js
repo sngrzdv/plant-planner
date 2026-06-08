@@ -14,6 +14,9 @@ function sanitizeCachedProfile(profile) {
     is_blocked: profile.is_blocked,
     notification_enabled: profile.notification_enabled,
     email_notifications_enabled: profile.email_notifications_enabled,
+    lunar_enabled: profile.lunar_enabled,
+    weather_alerts_enabled: profile.weather_alerts_enabled,
+    last_email_digest_sent_at: profile.last_email_digest_sent_at,
     avatar_url: profile.avatar_url,
     created_at: profile.created_at,
   }
@@ -83,7 +86,7 @@ export const useAuthStore = create((set, get) => ({
 
     const request = supabase
       .from('profiles')
-      .select('id, email, full_name, city, role_id, is_blocked, notification_enabled, email_notifications_enabled, avatar_url, created_at')
+      .select('id, email, full_name, city, role_id, is_blocked, notification_enabled, email_notifications_enabled, lunar_enabled, weather_alerts_enabled, last_email_digest_sent_at, avatar_url, created_at')
       .eq('id', userId)
       .single()
       .then(({ data, error }) => {

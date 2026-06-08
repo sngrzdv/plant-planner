@@ -1,7 +1,5 @@
-/** Ссылка mailto с дайджестом задач (работает без серверной отправки). */
-export function buildTaskDigestMailto(email, { overdue = [], today = [] }) {
-  if (!email) return null
-
+/** Текст дайджеста задач для mailto и email. */
+export function buildDigestLines({ overdue = [], today = [] }) {
   const lines = ['Plant Planner — напоминание о задачах', '']
   if (overdue.length) {
     lines.push(`Просрочено (${overdue.length}):`)
@@ -17,12 +15,19 @@ export function buildTaskDigestMailto(email, { overdue = [], today = [] }) {
     lines.push('На сегодня задач нет. Отличная работа!')
   }
   lines.push('', 'Открыть приложение: https://plant-planner-nu.vercel.app/reminders')
+  return lines
+}
 
-  const subject = overdue.length
-    ? `Plant Planner: ${overdue.length} просроченных задач`
-    : today.length
-      ? `Plant Planner: ${today.length} задач на сегодня`
-      : 'Plant Planner: задачи в порядке'
+export function buildDigestSubject({ overdue = [], today = [] }) {
+  if (overdue.length) return `Plant Planner: ${overdue.length} просроченных задач`
+  if (today.length) return `Plant Planner: ${today.length} задач на сегодня`
+  return 'Plant Planner: задачи в порядке'
+}
 
+/** Ссылка mailto с дайджестом задач (работает без серверной отправки). */
+export function buildTaskDigestMailto(email, { overdue = [], today = [] }) {
+  if (!email) return null
+  const lines = buildDigestLines({ overdue, today })
+  const subject = buildDigestSubject({ overdue, today })
   return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`
 }

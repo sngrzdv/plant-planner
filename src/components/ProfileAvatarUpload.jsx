@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
-import { Camera, Loader2, User } from 'lucide-react'
+import { Camera, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { uploadAvatar } from '../services/avatarStorage'
 import { toast } from '../store/toastStore'
+import AvatarImage from './AvatarImage'
 
 export default function ProfileAvatarUpload({ profile, onUpdated }) {
   const inputRef = useRef(null)
@@ -38,15 +39,13 @@ export default function ProfileAvatarUpload({ profile, onUpdated }) {
     <div className="flex items-center gap-4">
       <div className="relative shrink-0">
         <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-green-100 border border-green-200/60 flex items-center justify-center">
-          {profile?.avatar_url ? (
-            <img
-              src={profile.avatar_url}
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="text-3xl font-bold text-green-700">{initial}</span>
-          )}
+          <AvatarImage
+            src={profile?.avatar_url}
+            alt=""
+            className="w-full h-full object-cover"
+            initial={initial}
+            initialClassName="text-3xl font-bold text-green-700"
+          />
           {uploading && (
             <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
               <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
@@ -74,9 +73,7 @@ export default function ProfileAvatarUpload({ profile, onUpdated }) {
           {profile?.avatar_url ? 'Изменить фото' : 'Загрузить фото'}
         </button>
         {!profile?.avatar_url && (
-          <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1">
-            <User className="w-3 h-3" /> Пока отображается буква имени
-          </p>
+          <p className="text-[11px] text-gray-400 mt-1">Пока отображается буква имени</p>
         )}
       </div>
     </div>

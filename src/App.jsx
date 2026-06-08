@@ -1,6 +1,8 @@
 import { weatherApi } from './services/weatherApi'
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom'
 import { createElement, lazy, Suspense, useEffect, useState } from 'react'
+import NotificationRunner from './components/NotificationRunner'
+import PageNotFound from './components/PageNotFound'
 import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
 import { 
@@ -138,6 +140,7 @@ function App() {
     <Router>
       <ToastContainer />
       <ConfirmDialog />
+      <NotificationRunner />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
@@ -155,7 +158,17 @@ function App() {
         <Route path="/garden/:id" element={<LazyPage><GardenView /></LazyPage>} />
         <Route path="/bed/:id/edit" element={<LazyPage><BedEditor /></LazyPage>} />
         <Route path="/" element={<Navigate to="/dashboard" />} />
-        <Route path="*" element={<Navigate to="/dashboard" />} />
+        <Route
+          path="*"
+          element={
+            <PageNotFound
+              title="Страница не найдена"
+              message="Такого адреса нет. Проверьте ссылку или вернитесь на главную."
+              backTo="/dashboard"
+              backLabel="На главную"
+            />
+          }
+        />
       </Routes>
     </Router>
   )
@@ -236,20 +249,12 @@ function Dashboard() {
       setTodayTasks(tasksResult.data || [])
       setPendingReminders(remindersResult.data || [])
       setLoadingTasks(false)
-
-      notificationService.runDashboardNotifications({
-        profile,
-        prefs,
-        reminders: remindersResult.data || [],
-        weather: weatherData,
-        lunarAdvice,
-      })
     }
 
     loadDashboard()
     const interval = setInterval(loadDashboard, 10 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [userId, profile?.city, profile?.notification_enabled, profile?.email_notifications_enabled, prefs.lunarEnabled, prefs.weatherAlerts, lunarAdvice])
+  }, [userId, profile?.city])
 
   async function completeTask(taskId) {
     setCompletingTask(taskId)
