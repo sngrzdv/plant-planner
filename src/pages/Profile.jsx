@@ -10,6 +10,7 @@ import {
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 import { notificationService } from '../services/notificationService'
+import { fetchUserPlantingStats } from '../services/plantingService'
 
 export default function Profile() {
   const { profile, setProfile } = useAuthStore()
@@ -39,26 +40,28 @@ export default function Profile() {
       setLoading(true)
       try {
         const userId = profile?.id
-        
+        if (!userId) {
+          setLoading(false)
+          return
+        }
+
         const [
           { count: gardens },
           { count: pots },
           { count: reminders },
           { count: completed },
-          { count: plantsOnBeds },
-          { data: yearlyData },
-          { data: topPlantsData },
+          plantingStats,
           { data: monthlyData }
         ] = await Promise.all([
           supabase.from('layouts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
           supabase.from('pots').select('*', { count: 'exact', head: true }).eq('status', 'growing').eq('user_id', userId),
           supabase.from('reminders').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('user_id', userId),
           supabase.from('reminders').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('user_id', userId),
-          supabase.from('plants_on_beds').select('*', { count: 'exact', head: true }),
-          supabase.from('bed_elements').select('planted_year, plant_id, plants:plant_id(name)').eq('type', 'plant_spot').order('planted_year', { ascending: false }),
-          supabase.from('bed_elements').select('plant_id, plants:plant_id(name, image_url)').eq('type', 'plant_spot'),
+          fetchUserPlantingStats(userId),
           supabase.from('reminders').select('due_date, status').eq('user_id', userId),
         ])
+
+        const { plantings, count: plantsOnBeds } = plantingStats
         
         setStats({
           gardens: gardens || 0,
@@ -70,25 +73,26 @@ export default function Profile() {
           completionRate: (reminders || 0) + (completed || 0) > 0 
             ? Math.round(((completed || 0) / ((reminders || 0) + (completed || 0))) * 100) : 0
         })
-        
-        if (yearlyData) {
+
+        if (plantings.length) {
           const byYear = {}
-          yearlyData.forEach(item => {
+          plantings.forEach((item) => {
             const year = item.planted_year || new Date().getFullYear()
             if (!byYear[year]) byYear[year] = { year, count: 0, plants: [] }
             byYear[year].count++
-            byYear[year].plants.push(item.plants?.name)
+            if (item.plants?.name) byYear[year].plants.push(item.plants.name)
           })
           setYearlyStats(Object.values(byYear).sort((a, b) => b.year - a.year))
-        }
-        
-        if (topPlantsData) {
+
           const counts = {}
-          topPlantsData.forEach(item => {
+          plantings.forEach((item) => {
             const name = item.plants?.name || 'Неизвестно'
             counts[name] = (counts[name] || 0) + 1
           })
           setTopPlants(Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5))
+        } else {
+          setYearlyStats([])
+          setTopPlants([])
         }
         
         if (monthlyData) {

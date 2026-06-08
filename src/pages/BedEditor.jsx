@@ -7,6 +7,7 @@ import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
 import { useAuthStore } from '../store/authStore'
 import { reminderService } from '../services/reminderService'
+import { plantInBedGrid, removeGridPlanting } from '../services/plantingService'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
 import PageNotFound from '../components/PageNotFound'
@@ -246,17 +247,11 @@ export default function BedEditor() {
     const isCompatible = await checkCompatibility(plant, selectedCell.x, selectedCell.y)
     if (!isCompatible) return
 
-    const currentYear = new Date().getFullYear()
-    const { data, error } = await supabase.from('bed_elements').insert({
-      bed_id: id, type: 'plant_spot', name: plant.name,
-      pos_x: selectedCell.x + 4, pos_y: selectedCell.y + 4,
-      width: CELL_SIZE - 8, height: CELL_SIZE - 8,
-      color: '#4ADE80', plant_id: plant.id, planted_year: currentYear
-    }).select('*, plant:plant_id(id, name, image_url, watering_freq_days, maturation_days, planting_method, difficulty, scientific_facts)').single()
-
-    if (error) {
-      toast.error(`Не удалось посадить: ${error.message}`)
-    } else if (data) {
+    try {
+      const data = await plantInBedGrid(id, plant, {
+        cellX: selectedCell.x,
+        cellY: selectedCell.y,
+      })
       setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
       if (user) {
@@ -266,6 +261,8 @@ export default function BedEditor() {
           console.warn('Не удалось создать напоминания:', reminderError)
         }
       }
+    } catch (error) {
+      toast.error(`Не удалось посадить: ${error.message}`)
     }
     setShowPlantModal(false)
     setSelectedCell(null)
@@ -288,17 +285,8 @@ export default function BedEditor() {
   }
 
   async function plantInCellDirect(plant, cellX, cellY) {
-    const currentYear = new Date().getFullYear()
-    const { data, error } = await supabase.from('bed_elements').insert({
-      bed_id: id, type: 'plant_spot', name: plant.name,
-      pos_x: cellX + 4, pos_y: cellY + 4,
-      width: CELL_SIZE - 8, height: CELL_SIZE - 8,
-      color: '#4ADE80', plant_id: plant.id, planted_year: currentYear
-    }).select('*, plant:plant_id(id, name, image_url, watering_freq_days, maturation_days, planting_method, difficulty, scientific_facts)').single()
-
-    if (error) {
-      toast.error(`Не удалось посадить: ${error.message}`)
-    } else if (data) {
+    try {
+      const data = await plantInBedGrid(id, plant, { cellX, cellY })
       setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
       if (user) {
@@ -308,6 +296,8 @@ export default function BedEditor() {
           console.warn('Не удалось создать напоминания:', reminderError)
         }
       }
+    } catch (error) {
+      toast.error(`Не удалось посадить: ${error.message}`)
     }
   }
 
@@ -659,15 +649,19 @@ export default function BedEditor() {
                     destructive: true,
                   })
                   if (!ok) return
-                  const { error } = await supabase.from('bed_elements').delete().eq('id', selectedPlantInfo.id)
-                  if (error) {
+                  try {
+                    await removeGridPlanting(
+                      selectedPlantInfo.id,
+                      id,
+                      selectedPlantInfo.plant_id
+                    )
+                    setBedPlants(bedPlants.filter(p => p.id !== selectedPlantInfo.id))
+                    setShowPlantInfo(false)
+                    setSelectedPlantInfo(null)
+                    toast.success('Растение удалено с грядки')
+                  } catch (error) {
                     toast.error(`Не удалось удалить: ${error.message}`)
-                    return
                   }
-                  setBedPlants(bedPlants.filter(p => p.id !== selectedPlantInfo.id))
-                  setShowPlantInfo(false)
-                  setSelectedPlantInfo(null)
-                  toast.success('Растение удалено с грядки')
                 }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors">
                   <Trash2 className="w-4 h-4" /> Удалить растение
                 </button>

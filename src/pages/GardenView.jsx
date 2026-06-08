@@ -71,23 +71,35 @@ export default function GardenView() {
         .eq('type', 'plant_spot'),
     ])
 
-    // Объединяем оба списка
-    const allZonePlants = [
-      ...(plantsOnBed || []).map(p => ({
+    // Объединяем оба источника без дублей (bed_id + plant_id)
+    const seen = new Set()
+    const allZonePlants = []
+
+    for (const p of plantsOnBed || []) {
+      const key = `${zone.id}-${p.plant_id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      allZonePlants.push({
         id: p.id,
         plants: p.plants,
         source: p.source_type === 'pot' ? '🪴 Из рассады' : '🌱 Посажено',
         watering: p.plants?.watering_freq_days,
-        maturation: p.plants?.maturation_days
-      })),
-      ...(bedElements || []).map(p => ({
+        maturation: p.plants?.maturation_days,
+      })
+    }
+
+    for (const p of bedElements || []) {
+      const key = `${zone.id}-${p.plant_id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      allZonePlants.push({
         id: p.id,
         plants: p.plant,
         source: '📐 Из редактора грядки',
         watering: p.plant?.watering_freq_days,
-        maturation: p.plant?.maturation_days
-      }))
-    ]
+        maturation: p.plant?.maturation_days,
+      })
+    }
 
     setPlants(allZonePlants)
   }

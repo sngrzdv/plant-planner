@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
+import { toast } from './toastStore'
 
 const CACHE_TTL_MS = 30 * 60 * 1000
 const PLANT_LIST_COLUMNS = 'id, name, category_id, image_url, watering_freq_days, maturation_days, planting_method, days_to_transplant, difficulty, description, scientific_facts'
@@ -30,7 +31,10 @@ export const useReferenceStore = create((set, get) => ({
       .select(PLANT_LIST_COLUMNS)
       .order('name')
       .then(({ data, error }) => {
-        if (error) return []
+        if (error) {
+          toast.error(`Не удалось загрузить каталог: ${error.message}`)
+          return get().plants
+        }
         const plants = data || []
         set({ plants, plantsLoadedAt: Date.now() })
         return plants
@@ -56,7 +60,10 @@ export const useReferenceStore = create((set, get) => ({
       .from('plant_categories')
       .select('*')
       .then(({ data, error }) => {
-        if (error) return []
+        if (error) {
+          toast.error(`Не удалось загрузить категории: ${error.message}`)
+          return get().categories
+        }
         const categories = data || []
         set({ categories, categoriesLoadedAt: Date.now() })
         return categories

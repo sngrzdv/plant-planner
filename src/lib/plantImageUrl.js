@@ -24,16 +24,19 @@ export function toCanonicalStorageUrl(url) {
 export function resolvePlantImageUrl(url) {
   if (!url || typeof url !== 'string') return null
 
-  const path = extractStoragePublicPath(url)
+  // Старые записи после бага с двойным /supabase
+  const normalized = url.replace(/\/supabase\/supabase\//g, '/supabase/')
+
+  const path = extractStoragePublicPath(normalized)
   if (path) {
     return `${window.location.origin}/supabase${path}`
   }
 
-  if (url.startsWith('/supabase/')) {
-    return `${window.location.origin}${url}`
+  if (normalized.startsWith('/supabase/')) {
+    return `${window.location.origin}${normalized}`
   }
 
-  return url
+  return normalized
 }
 
 export function isStorageImageUrl(url) {
