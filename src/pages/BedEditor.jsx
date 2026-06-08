@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Save, Plus, Trash2, Minus, X, Search, Ruler, Grid3X3, Move, Droplets, Calendar, Sprout } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Minus, X, Search, Ruler, Grid3X3, Move, Droplets, Calendar, Sprout, Info, BarChart3, ClipboardList } from 'lucide-react'
+import { plantingMethodLabel } from '../lib/plantLabels'
 import { Rnd } from 'react-rnd'
 import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
@@ -23,10 +24,10 @@ const THEME = {
 }
 
 const SIZE_PRESETS = [
-  { label: 'Маленький', desc: '3×2 м', width: 300, height: 200, icon: '🪴' },
-  { label: 'Средний', desc: '5×4 м', width: 500, height: 400, icon: '🌿' },
-  { label: 'Большой', desc: '7×5 м', width: 700, height: 500, icon: '🌳' },
-  { label: 'Огромный', desc: '10×7 м', width: 1000, height: 700, icon: '🏡' },
+  { label: 'Маленький', desc: '3×2 м', width: 300, height: 200, abbr: 'S' },
+  { label: 'Средний', desc: '5×4 м', width: 500, height: 400, abbr: 'M' },
+  { label: 'Большой', desc: '7×5 м', width: 700, height: 500, abbr: 'L' },
+  { label: 'Огромный', desc: '10×7 м', width: 1000, height: 700, abbr: 'XL' },
 ]
 
 const CELL_SIZE = 50
@@ -362,7 +363,7 @@ export default function BedEditor() {
           <div className="grid grid-cols-2 gap-3 mb-4">
             {SIZE_PRESETS.map(p => (
               <button key={p.width} onClick={() => applyGardenSize(p.width, p.height)} className="flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-gray-200 hover:border-green-400 hover:bg-gradient-to-br hover:from-green-50 hover:to-emerald-50/50 transition-all duration-200 group">
-                <span className="text-3xl group-hover:scale-110 transition-transform">{p.icon}</span><span className="font-medium text-sm text-gray-700">{p.label}</span><span className="text-xs text-gray-400">{p.desc}</span>
+                <span className="text-lg font-bold text-green-700 group-hover:scale-110 transition-transform">{p.abbr}</span><span className="font-medium text-sm text-gray-700">{p.label}</span><span className="text-xs text-gray-400">{p.desc}</span>
               </button>
             ))}
           </div>
@@ -373,7 +374,7 @@ export default function BedEditor() {
               <span className="text-gray-300 text-lg">×</span>
               <div className="flex-1"><label className="text-xs text-gray-400 mb-1 block">Длина</label><input type="number" value={gardenHeight} onChange={e => setGardenHeight(Math.max(100, parseInt(e.target.value) || 200))} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all" placeholder="Длина" /></div>
             </div>
-            <button onClick={() => applyGardenSize(gardenWidth, gardenHeight)} className="w-full mt-4 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 font-medium shadow-lg shadow-green-500/25 transition-all active:scale-98">✨ Создать огород</button>
+            <button onClick={() => applyGardenSize(gardenWidth, gardenHeight)} className="w-full mt-4 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 font-medium shadow-lg shadow-green-500/25 transition-all active:scale-98">Создать огород</button>
           </div>
         </div>
       </div>
@@ -385,14 +386,14 @@ export default function BedEditor() {
       {showTutorial && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={closeTutorial}>
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-gray-800">🌱 Добро пожаловать!</h3><button onClick={closeTutorial} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button></div>
+            <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-gray-800">Добро пожаловать!</h3><button onClick={closeTutorial} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button></div>
             <div className="space-y-3 text-sm text-gray-600">
               <div className="flex items-start gap-3"><span className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">1</span><p>Выберите размер грядки на левой панели</p></div>
               <div className="flex items-start gap-3"><span className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">2</span><p>Перетащите грядку или растение из каталога</p></div>
               <div className="flex items-start gap-3"><span className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">3</span><p>Кликните на клетку чтобы посадить растение</p></div>
               <div className="flex items-start gap-3"><span className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">4</span><p>Используйте <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">Ctrl + колёсико</kbd> для масштабирования</p></div>
             </div>
-            <button onClick={closeTutorial} className="w-full mt-6 py-2.5 bg-green-500 text-white rounded-xl hover:bg-green-600 font-medium transition-colors">Понятно, начинаем! 🚀</button>
+            <button onClick={closeTutorial} className="w-full mt-6 py-2.5 bg-green-500 text-white rounded-xl hover:bg-green-600 font-medium transition-colors">Понятно, начинаем</button>
           </div>
         </div>
       )}
@@ -433,7 +434,7 @@ export default function BedEditor() {
           </div>
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="p-3 border-b border-gray-100">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">🌱 Каталог</span>
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Каталог</span>
               <p className="text-[10px] text-gray-400 mt-0.5">Перетащите на грядку</p>
               <div className="relative mt-2"><Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" /><input type="text" placeholder="Поиск..." value={searchPlant} onChange={e => setSearchPlant(e.target.value)} className="w-full pl-7 pr-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px]" /></div>
             </div>
@@ -445,7 +446,7 @@ export default function BedEditor() {
                   <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
                     <PlantImage src={plant.image_url} alt={plant.name} className="w-7 h-7 rounded object-cover" fallbackClassName="w-7 h-7 rounded" compact />
                   </div>
-                  <div className="flex-1 min-w-0"><p className="text-[11px] font-medium truncate">{plant.name}</p><p className="text-[9px] text-gray-400">💧{plant.watering_freq_days}д 📅{plant.maturation_days}д</p></div>
+                  <div className="flex-1 min-w-0"><p className="text-[11px] font-medium truncate">{plant.name}</p><p className="text-[9px] text-gray-400 flex items-center gap-1"><Droplets className="w-2.5 h-2.5" />{plant.watering_freq_days}д <Calendar className="w-2.5 h-2.5 ml-0.5" />{plant.maturation_days}д</p></div>
                 </div>
               ))}
             </div>
@@ -504,7 +505,7 @@ export default function BedEditor() {
                               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragOverCell(`${subBed.id}-${i}`); }}
                               onDragLeave={() => setDragOverCell(null)} onDrop={(e) => handleDropOnCell(e, subBed.id, cellX, cellY)}
                               className={`border border-white/10 flex items-center justify-center cursor-pointer transition-all relative group/cell ${dragOverCell === `${subBed.id}-${i}` ? 'bg-green-500/20 border-green-400/50' : 'hover:bg-white/10'}`}
-                              title={plantInCell ? `🌱 ${plantInCell.plant?.name}` : 'Кликните или перетащите растение'}>
+                              title={plantInCell ? plantInCell.plant?.name : 'Кликните или перетащите растение'}>
                               {plantInCell ? (
                                 <div className="relative">
                                   <PlantImage
@@ -540,7 +541,7 @@ export default function BedEditor() {
             <div className="p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-                  <span>🌱</span> Информация
+                  <span className="flex items-center gap-1.5"><Info className="w-4 h-4" /> Информация</span>
                 </h3>
                 <button onClick={() => { setShowPlantInfo(false); setSelectedPlantInfo(null); }} 
                   className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -580,12 +581,11 @@ export default function BedEditor() {
                   <Sprout className="w-4 h-4 text-green-500 mb-1" />
                   <p className="text-xs text-gray-500">Способ</p>
                   <p className="font-semibold text-xs">
-                    {selectedPlantInfo.plant?.planting_method === 'seedling' ? '🌱 Рассада' :
-                    selectedPlantInfo.plant?.planting_method === 'perennial' ? '🌳 Многолетник' : '🌍 Прямой посев'}
+                    {plantingMethodLabel(selectedPlantInfo.plant?.planting_method)}
                   </p>
                 </div>
                 <div className="bg-purple-50 rounded-xl p-3">
-                  <span className="text-lg block mb-1">📊</span>
+                  <BarChart3 className="w-4 h-4 mx-auto mb-1 text-gray-500" />
                   <p className="text-xs text-gray-500">Сложность</p>
                   <p className="font-semibold text-sm">{selectedPlantInfo.plant?.difficulty || '—'}</p>
                 </div>
@@ -593,7 +593,7 @@ export default function BedEditor() {
 
               {/* Информация о посадке */}
               <div className="bg-gray-50 rounded-2xl p-4 mb-4 space-y-3">
-                <h4 className="text-sm font-semibold text-gray-700">📋 Детали посадки</h4>
+                <h4 className="text-sm font-semibold text-gray-700">Детали посадки</h4>
                 
                 {/* Дата посадки */}
                 <div className="flex items-center gap-3">
@@ -629,7 +629,7 @@ export default function BedEditor() {
                   <div>
                     <p className="text-xs text-gray-500">Тип посадки</p>
                     <p className="text-sm font-medium">
-                      {selectedPlantInfo.source_type === 'pot' ? '🪴 Пересажен из рассады' : '📐 Посажен в огород'}
+                      {selectedPlantInfo.source_type === 'pot' ? 'Пересажен из рассады' : 'Посажен в огород'}
                     </p>
                   </div>
                 </div>
@@ -674,17 +674,17 @@ export default function BedEditor() {
         <div className="fixed inset-0 bg-gradient-to-br from-black/60 to-black/40 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => { setShowPlantModal(false); setSelectedCell(null); }}>
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-green-50/50 to-emerald-50/30">
-              <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><span>🌱</span> Посадить растение</h2><button onClick={() => { setShowPlantModal(false); setSelectedCell(null); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-400" /></button></div>
+              <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Sprout className="w-5 h-5 text-green-600" /> Посадить растение</h2><button onClick={() => { setShowPlantModal(false); setSelectedCell(null); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-400" /></button></div>
               <div className="relative"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400" /><input type="text" value={searchPlant} onChange={e => setSearchPlant(e.target.value)} placeholder="Поиск по названию или категории..." className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 transition-all shadow-sm" autoFocus /></div>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-1.5 bg-gray-50/30">
-              {filteredPlants.length === 0 ? <div className="text-center py-10 text-gray-400"><span className="text-4xl mb-3 block">🔍</span><p className="font-medium">Ничего не найдено</p></div> : filteredPlants.map(plant => (
+              {filteredPlants.length === 0 ? <div className="text-center py-10 text-gray-400"><Search className="w-10 h-10 mx-auto mb-3 opacity-40" /><p className="font-medium">Ничего не найдено</p></div> : filteredPlants.map(plant => (
                 <button key={plant.id} onClick={() => plantInCell(plant)} className="w-full flex items-center gap-3 p-3.5 rounded-2xl hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50/60 hover:border-green-200 border border-transparent text-left transition-all duration-200 group">
                   <div className="w-13 h-13 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-green-200/60 group-hover:scale-105 transition-transform shadow-sm">
                     <PlantImage src={plant.image_url} alt={plant.name} className="w-full h-full object-cover" fallbackClassName="w-full h-full" />
                   </div>
                   <div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-800 truncate">{plant.name}</p>
-                    <div className="flex items-center gap-3 mt-1"><span className="text-xs text-gray-500 flex items-center gap-1">💧 {plant.watering_freq_days} дн.</span><span className="text-xs text-gray-500 flex items-center gap-1">📅 {plant.maturation_days} дн.</span>{plant.category?.name && <span className="text-xs text-gray-400">• {plant.category.name}</span>}</div>
+                    <div className="flex items-center gap-3 mt-1"><span className="text-xs text-gray-500 flex items-center gap-1"><Droplets className="w-3 h-3" /> {plant.watering_freq_days} дн.</span><span className="text-xs text-gray-500 flex items-center gap-1"><Calendar className="w-3 h-3" /> {plant.maturation_days} дн.</span>{plant.category?.name && <span className="text-xs text-gray-400">• {plant.category.name}</span>}</div>
                   </div>
                   <div className="w-7 h-7 rounded-full border-2 border-green-500/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all bg-green-50 group-hover:bg-green-100"><Plus className="w-4 h-4 text-green-600" /></div>
                 </button>

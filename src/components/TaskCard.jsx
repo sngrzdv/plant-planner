@@ -41,7 +41,7 @@ export default function TaskCard({ reminder, onComplete }) {
           <p className="text-sm text-gray-600 mt-0.5">{reminder.description}</p>
         )}
         {reminder.plants && (
-          <p className="text-xs text-gray-500 mt-1">🌱 {reminder.plants.name}</p>
+          <p className="text-xs text-gray-500 mt-1">{reminder.plants.name}</p>
         )}
       </div>
       

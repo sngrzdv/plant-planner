@@ -5,14 +5,14 @@ import { useAuthStore } from '../store/authStore'
 import { useReferenceStore } from '../store/referenceStore'
 import { 
   Users, Sprout, Shield, Database, Trash2, Plus, BookOpen, 
-  Search, X, Edit, ClipboardList, Check, Ban
+  Search, X, Edit, ClipboardList, Check, Ban, Droplets, Calendar
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 import PlantImage from '../components/PlantImage'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
-import { formatSupabaseError } from '../lib/formatSupabaseError'
+import { plantingMethodLabel } from '../lib/plantLabels'
 
 const ADMIN_RLS_SQL = 'supabase/fix_admin_category_insert.sql'
 import { uploadPlantImage, deletePlantImage } from '../services/plantImageStorage'
@@ -55,7 +55,7 @@ export default function AdminPanel() {
     description: '', scientific_facts: '', planting_method: 'direct',
     days_to_transplant: 0, days_to_harvest: 60, difficulty: 'Легко'
   })
-  const [newCategory, setNewCategory] = useState({ name: '', icon: '🌱' })
+  const [newCategory, setNewCategory] = useState({ name: '', icon: '' })
   const [newFertilizer, setNewFertilizer] = useState({
     plant_id: '', name: '', type: 'complex', application_stage: '', description: ''
   })
@@ -262,7 +262,7 @@ export default function AdminPanel() {
     }
     useReferenceStore.getState().invalidateReferences()
     setShowCategoryForm(false)
-    setNewCategory({ name: '', icon: '🌱' })
+    setNewCategory({ name: '', icon: '' })
     toast.success('Категория добавлена')
     loadAllData()
   }
@@ -534,8 +534,7 @@ export default function AdminPanel() {
                         plant.planting_method === 'perennial' ? 'bg-purple-100 text-purple-700' :
                         'bg-green-100 text-green-700'
                       }`}>
-                        {plant.planting_method === 'seedling' ? '🌱 Рассада' :
-                        plant.planting_method === 'perennial' ? '🌳 Многолетник' : '🌍 Прямой посев'}
+                        {plantingMethodLabel(plant.planting_method)}
                       </span>
                     </div>
                   </div>
@@ -546,8 +545,8 @@ export default function AdminPanel() {
                     <p className="text-xs text-gray-500">{plant.category?.name || 'Без категории'}</p>
                     
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                      <span className="flex items-center gap-1">💧 {plant.watering_freq_days} дн.</span>
-                      <span className="flex items-center gap-1">📅 {plant.maturation_days} дн.</span>
+                      <span className="flex items-center gap-1"><Droplets className="w-3 h-3" /> {plant.watering_freq_days} дн.</span>
+                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {plant.maturation_days} дн.</span>
                     </div>
                     
                     {/* Кнопки */}
@@ -590,7 +589,7 @@ export default function AdminPanel() {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-800">{sub.name}</h3>
                     <p className="text-xs text-gray-500 mt-1">
-                      {sub.category?.icon} {sub.category?.name} · полив {sub.watering_freq_days} дн. · урожай {sub.maturation_days} дн.
+                      {sub.category?.name} · полив {sub.watering_freq_days} дн. · урожай {sub.maturation_days} дн.
                     </p>
                     {sub.description && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{sub.description}</p>}
                     {sub.scientific_facts && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{sub.scientific_facts}</p>}
@@ -736,9 +735,9 @@ export default function AdminPanel() {
                 <label className="block text-xs font-medium text-gray-700 mb-1">Способ посадки</label>
                 <select value={newPlant.planting_method} onChange={e => setNewPlant({...newPlant, planting_method: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">
-                  <option value="direct">🌍 Прямой посев</option>
-                  <option value="seedling">🌱 Рассада</option>
-                  <option value="perennial">🌳 Многолетник</option>
+                  <option value="direct">Прямой посев</option>
+                  <option value="seedling">Рассада</option>
+                  <option value="perennial">Многолетник</option>
                 </select>
               </div>
             </div>
@@ -758,9 +757,9 @@ export default function AdminPanel() {
                 <label className="block text-xs font-medium text-gray-700 mb-1">Освещение</label>
                 <select value={newPlant.sun_requirement} onChange={e => setNewPlant({...newPlant, sun_requirement: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">
-                  <option value="Солнце">☀️ Солнце</option>
-                  <option value="Солнце/Полутень">⛅ Солнце/Полутень</option>
-                  <option value="Полутень">🌥️ Полутень</option>
+                  <option value="Солнце">Солнце</option>
+                  <option value="Солнце/Полутень">Солнце/Полутень</option>
+                  <option value="Полутень">Полутень</option>
                 </select>
               </div>
             </div>
@@ -845,7 +844,7 @@ export default function AdminPanel() {
             {/* Кнопка */}
             <button onClick={savePlant} disabled={uploadingPlant}
               className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium transition-colors disabled:opacity-60">
-              {uploadingPlant ? 'Загрузка…' : editMode ? '💾 Сохранить изменения' : '➕ Добавить растение'}
+              {uploadingPlant ? 'Загрузка…' : editMode ? 'Сохранить изменения' : 'Добавить растение'}
             </button>
           </div>
         </Modal>

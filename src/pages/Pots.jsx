@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { 
@@ -13,10 +13,12 @@ import MobileNav from '../components/MobileNav'
 import { reminderService } from '../services/reminderService'
 import { notificationService } from '../services/notificationService'
 import { useReferenceStore } from '../store/referenceStore'
+import { JOURNAL_ACTION_LABELS } from '../lib/plantLabels'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
 
 export default function Pots() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [categories, setCategories] = useState([])
   const [filterCategory, setFilterCategory] = useState(null)
   const [filterReadyOnly, setFilterReadyOnly] = useState(false)
@@ -112,6 +114,14 @@ export default function Pots() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (searchParams.get('action') !== 'add') return
+    setShowAddModal(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('action')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   async function addPot() {
     if (!newPot.plant_id) {
@@ -304,10 +314,10 @@ export default function Pots() {
   }
 
   function getGrowthStage(progress) {
-    if (progress < 20) return { label: 'Прорастание', color: 'text-amber-600', bg: 'bg-amber-100', emoji: '🌰' }
-    if (progress < 50) return { label: 'Рост', color: 'text-green-600', bg: 'bg-green-100', emoji: '🌿' }
-    if (progress < 80) return { label: 'Цветение', color: 'text-pink-600', bg: 'bg-pink-100', emoji: '🌸' }
-    return { label: 'Готово к высадке', color: 'text-blue-600', bg: 'bg-blue-100', emoji: '🌻' }
+    if (progress < 20) return { label: 'Прорастание', color: 'text-amber-600', bg: 'bg-amber-100' }
+    if (progress < 50) return { label: 'Рост', color: 'text-green-600', bg: 'bg-green-100' }
+    if (progress < 80) return { label: 'Цветение', color: 'text-pink-600', bg: 'bg-pink-100' }
+    return { label: 'Готово к высадке', color: 'text-blue-600', bg: 'bg-blue-100' }
   }
 
   function getProgressColor(progress) {
@@ -372,10 +382,10 @@ export default function Pots() {
 
         <div className="flex items-center gap-2 mb-4">
           <button onClick={() => setActiveTab('growing')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'growing' ? 'bg-green-600 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
-            🌱 Рассада ({pots.length})
+            Рассада ({pots.length})
           </button>
           <button onClick={() => setActiveTab('transplanted')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'transplanted' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
-            📋 Пересажено ({transplantedPots.length})
+            Пересажено ({transplantedPots.length})
           </button>
         </div>
 
@@ -415,7 +425,7 @@ export default function Pots() {
                 <div className="w-24 h-24 bg-amber-100 rounded-3xl flex items-center justify-center mx-auto mb-6"><Flower className="w-12 h-12 text-amber-500" /></div>
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">Пока нет рассады</h3>
                 <p className="text-gray-500 mb-6">Посадите своё первое семечко и отслеживайте рост</p>
-                <button onClick={() => setShowAddModal(true)} className="bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 font-medium">🌱 Посадить первое семечко</button>
+                <button onClick={() => setShowAddModal(true)} className="bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 font-medium">Посадить первое семечко</button>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
@@ -456,7 +466,7 @@ export default function Pots() {
                         </div>
                       </div>
                       <div className="mb-4">
-                        <div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>🌰 Посев</span><span>🌿 Рост</span><span>🌸 Цветение</span><span>🌻 Высадка</span></div>
+                        <div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>Посев</span><span>Рост</span><span>Цветение</span><span>Высадка</span></div>
                         <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${progress}%`, backgroundColor: progressColor }} /></div>
                       </div>
                       <button onClick={() => openTransplantModal(pot)} className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-colors ${progress >= 80 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`} disabled={progress < 80} title={progress < 80 ? `Ещё рано. Нужно ${daysLeft} дней до высадки` : 'Можно пересаживать!'}>
@@ -507,7 +517,7 @@ export default function Pots() {
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-semibold">🌱 Посадить семечко</h2><button onClick={() => setShowAddModal(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
+            <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-semibold">Посадить семечко</h2><button onClick={() => setShowAddModal(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
             <div className="space-y-3">
               <div><label className="block text-sm font-medium mb-1">Растение *</label><select value={newPot.plant_id} onChange={e => setNewPot({...newPot, plant_id: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20"><option value="">Выберите растение</option>{plants.map(plant => <option key={plant.id} value={plant.id}>{plant.name}</option>)}</select></div>
               <input type="text" placeholder="Название (необязательно)" value={newPot.custom_name} onChange={e => setNewPot({...newPot, custom_name: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
@@ -523,7 +533,7 @@ export default function Pots() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[85vh] flex flex-col shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">🪴 Пересадка: {selectedPot?.custom_name || selectedPot?.plants?.name}</h2>
+              <h2 className="text-xl font-semibold">Пересадка: {selectedPot?.custom_name || selectedPot?.plants?.name}</h2>
               <button onClick={() => { setShowTransplantModal(false); setTransplantStep(1); }}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
 
@@ -639,7 +649,7 @@ export default function Pots() {
                                     plantHere ? 'cursor-not-allowed bg-red-500/30' : 
                                     isSelected ? 'bg-green-500/50' : 'hover:bg-white/10'
                                   }`}
-                                  title={plantHere ? `🌱 ${plantHere.plant?.name || 'Занято'}` : 'Свободно'}
+                                  title={plantHere ? (plantHere.plant?.name || 'Занято') : 'Свободно'}
                                 >
                                   {plantHere ? (
                                     <span className="text-[10px]">🌱</span>
@@ -672,7 +682,7 @@ export default function Pots() {
                   </div>
                   
                   {selectedTransplantCell && (
-                    <p className="text-xs text-green-600 text-center mt-2">✅ Клетка выбрана</p>
+                    <p className="text-xs text-green-600 text-center mt-2">Клетка выбрана</p>
                   )}
                 </div>
 
@@ -689,12 +699,12 @@ export default function Pots() {
       {showHistory && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowHistory(false)}>
           <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[70vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-semibold">📜 Журнал действий</h2><button onClick={() => setShowHistory(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
+            <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-semibold">Журнал действий</h2><button onClick={() => setShowHistory(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
             {history.length === 0 ? <p className="text-gray-400 text-center py-8">Пока нет записей</p> : (
               <div className="space-y-2">
                 {history.map(entry => (
                   <div key={entry.id} className="p-3 bg-gray-50 rounded-xl text-sm">
-                    <div className="flex items-center gap-2 mb-1"><span className="text-lg">{entry.action === 'transplanted' ? '🪴' : entry.action === 'sowed' ? '🌱' : '📝'}</span><span className="font-medium">{entry.plants?.name || entry.pots?.custom_name || 'Растение'}</span></div>
+                    <div className="flex items-center gap-2 mb-1"><span className="text-xs font-medium text-gray-500 uppercase">{JOURNAL_ACTION_LABELS[entry.action] || 'Запись'}</span><span className="font-medium">{entry.plants?.name || entry.pots?.custom_name || 'Растение'}</span></div>
                     <p className="text-gray-600">{entry.details}</p>
                     <p className="text-xs text-gray-400 mt-1">{new Date(entry.created_at).toLocaleString('ru-RU')}</p>
                   </div>

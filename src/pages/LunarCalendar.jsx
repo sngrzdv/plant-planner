@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import lunarService from '../services/lunarService'
 import { getMoonData, getMoonZodiac } from '../utils/lunar'
-import { ChevronLeft, ChevronRight, Moon, X, Calendar, Droplets, Sprout, Sun } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Moon, X, Calendar, Droplets, Sprout, Sun, Check } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 
@@ -150,7 +150,7 @@ export default function LunarCalendar() {
                   <p className="text-[10px] sm:text-xs text-gray-500 mt-1 truncate">{item.moonData.phase}</p>
                   {crop && rec && (
                     <div className="mt-1">
-                      {rec.status === 'favorable' && <span className="text-[10px] text-green-600 font-medium">✅</span>}
+                      {rec.status === 'favorable' && <Check className="w-3 h-3 text-green-600" aria-label="Благоприятно" />}
                       {rec.status === 'unfavorable' && <span className="text-[10px] text-red-500 font-medium">⛔</span>}
                     </div>
                   )}
@@ -218,7 +218,7 @@ export default function LunarCalendar() {
                 {/* Статус */}
                 <div className="text-center">
                   {selectedDay.recommendation.status === 'favorable' && (
-                    <span className="inline-block px-4 py-2 bg-green-100 text-green-700 rounded-full font-medium">✅ Благоприятный день</span>
+                    <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-green-100 text-green-700 rounded-full font-medium"><Check className="w-4 h-4" /> Благоприятный день</span>
                   )}
                   {selectedDay.recommendation.status === 'unfavorable' && (
                     <span className="inline-block px-4 py-2 bg-red-100 text-red-700 rounded-full font-medium">⛔ Не рекомендуется</span>

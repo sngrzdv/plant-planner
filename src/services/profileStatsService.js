@@ -2,9 +2,9 @@ import { supabase } from '../lib/supabase'
 import { fetchUserBedIds } from './plantingService'
 
 const ACTION_LABELS = {
-  sowed: '🌱 Посев',
-  transplanted: '🪴 Пересадка',
-  custom_plant_added: '📔 В дневник',
+  sowed: 'Посев',
+  transplanted: 'Пересадка',
+  custom_plant_added: 'В дневник',
 }
 
 const MONTHS = ['', 'Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
@@ -68,20 +68,20 @@ function formatJournalEntry(entry) {
 function buildRecommendations(summary) {
   const tips = []
   if (summary.overdueTasks > 0) {
-    tips.push(`⚠️ ${summary.overdueTasks} просроченных задач — загляните в календарь ухода.`)
+    tips.push(`${summary.overdueTasks} просроченных задач — загляните в календарь ухода.`)
   }
   if (summary.todayTasks > 0) {
-    tips.push(`📅 Сегодня ${summary.todayTasks} ${summary.todayTasks === 1 ? 'задача' : 'задач'}.`)
+    tips.push(`Сегодня ${summary.todayTasks} ${summary.todayTasks === 1 ? 'задача' : 'задач'}.`)
   }
-  if (summary.gardens === 0) tips.push('🌱 Создайте первый участок в разделе «Мои участки».')
+  if (summary.gardens === 0) tips.push('Создайте первый участок в разделе «Мои участки».')
   if (summary.plantSpots === 0 && summary.potsGrowing === 0) {
-    tips.push('🪴 Посадите рассаду или отметьте посадку на грядке.')
+    tips.push('Посадите рассаду или отметьте посадку на грядке.')
   }
   if (summary.completionRate >= 80 && summary.completedTasks > 0) {
-    tips.push(`🌟 Отличная дисциплина: ${summary.completionRate}% задач выполнено.`)
+    tips.push(`Отличная дисциплина: ${summary.completionRate}% задач выполнено.`)
   }
   if (summary.topPlants.length > 0) {
-    tips.push(`🏆 Чаще всего выращиваете: ${summary.topPlants[0][0]}.`)
+    tips.push(`Чаще всего выращиваете: ${summary.topPlants[0][0]}.`)
   }
   if (tips.length === 0) tips.push('✨ Продолжайте в том же духе — сад развивается!')
   return tips

@@ -116,7 +116,7 @@ class NotificationService {
 
     // Просроченные задачи
     if (overdueTasks.length > 0) {
-      this.send('⚠️ Просроченные задачи', {
+      this.send('Просроченные задачи', {
         body: `У вас ${overdueTasks.length} просроченных задач. Проверьте календарь ухода.`,
         requireInteraction: true,
         tag: 'overdue'
@@ -129,10 +129,10 @@ class NotificationService {
       const harvestCount = todayTasks.filter(t => t.type === 'harvest').length
       
       let body = `Сегодня нужно выполнить ${todayTasks.length} задач`
-      if (wateringCount > 0) body += `\n💧 Полив: ${wateringCount}`
-      if (harvestCount > 0) body += `\n🧺 Сбор урожая: ${harvestCount}`
+      if (wateringCount > 0) body += `\nПолив: ${wateringCount}`
+      if (harvestCount > 0) body += `\nСбор урожая: ${harvestCount}`
 
-      this.send('📅 Задачи на сегодня', { body, tag: 'today' })
+      this.send('Задачи на сегодня', { body, tag: 'today' })
     }
   }
 
@@ -150,7 +150,7 @@ class NotificationService {
       )
 
       if (tomorrowWatering.length > 0) {
-        this.send('🌧️ Завтра дождь!', {
+        this.send('Завтра дождь', {
           body: 'Можно пропустить полив — природа всё сделает сама.',
           tag: 'weather'
         })
@@ -158,7 +158,7 @@ class NotificationService {
     }
 
     if (weatherData?.temp !== undefined && weatherData.temp < 3) {
-      this.send('🥶 Заморозки!', {
+      this.send('Заморозки', {
         body: `Температура ${weatherData.temp}°C. Укройте рассаду и теплолюбивые растения.`,
         requireInteraction: true,
         tag: 'frost'
@@ -169,7 +169,7 @@ class NotificationService {
   // Уведомление о готовности рассады
   sendSeedlingReady(plantName) {
     if (!this.isGranted()) return
-    this.send('🌱 Рассада готова!', {
+    this.send('Рассада готова', {
       body: `${plantName} можно пересаживать в открытый грунт.`,
       tag: 'seedling'
     })
@@ -178,7 +178,7 @@ class NotificationService {
   // Уведомление по лунному календарю
   sendLunarAdvice(text) {
     if (!this.isGranted()) return
-    this.send('🌙 Совет дня', {
+    this.send('Совет дня', {
       body: text,
       tag: 'lunar'
     })

@@ -222,9 +222,9 @@ export default function AddUserPlant() {
               onChange={(e) => setForm({ ...form, planting_method: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
             >
-              <option value="direct">🌍 Прямой посев</option>
-              <option value="seedling">🌱 Рассада</option>
-              <option value="perennial">🌳 Многолетник</option>
+              <option value="direct">Прямой посев</option>
+              <option value="seedling">Рассада</option>
+              <option value="perennial">Многолетник</option>
             </select>
           </div>
 
@@ -324,7 +324,7 @@ export default function AddUserPlant() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-800 truncate">{plant.name}</p>
                       <p className="text-xs text-gray-500">
-                        {plant.category?.icon} {plant.category?.name || 'Без категории'}
+                        {plant.category?.name || 'Без категории'}
                       </p>
                       {plant.personal_notes && (
                         <p className="text-xs text-gray-600 mt-1 line-clamp-2">{plant.personal_notes}</p>

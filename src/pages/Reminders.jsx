@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { 
   Calendar, CheckCircle, Circle, Droplets, Sprout, 
   Scissors, AlertCircle, ChevronLeft, ChevronRight,
   Plus, X, Clock, Trash2, TrendingUp, Sparkles,
-  Flower2
+  Flower2, LayoutList, ClipboardList
 } from 'lucide-react'
+import { TASK_TYPE_LABELS } from '../lib/plantLabels'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 import PlantImage from '../components/PlantImage'
@@ -50,6 +51,7 @@ function getMoonEmoji(date) {
 }
 
 export default function Reminders() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuthStore()
   const [reminders, setReminders] = useState([])
   const [plants, setPlants] = useState([])
@@ -135,6 +137,14 @@ export default function Reminders() {
     if (showAddModal) loadPlants() 
   }, [showAddModal, loadPlants])
 
+  useEffect(() => {
+    if (searchParams.get('action') !== 'add') return
+    setShowAddModal(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('action')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
   async function completeReminder(id) {
     const { error } = await supabase.from('reminders').update({
       status: 'completed',
@@ -145,7 +155,7 @@ export default function Reminders() {
       return
     }
     setReminders(rs => rs.map(r => r.id === id ? { ...r, status: 'completed' } : r))
-    notificationService.success('Задача выполнена! 🎉')
+    notificationService.success('Задача выполнена')
   }
 
   async function skipReminder(id) {
@@ -305,12 +315,12 @@ export default function Reminders() {
   function getPlantTimeline(plant) {
     if (!plant?.maturation_days) return []
     return [
-      { name: 'Посев', day: 0, emoji: '🌰', color: '#8B5A2B' },
-      { name: 'Всходы', day: Math.round(plant.maturation_days * 0.1), emoji: '🌱', color: '#22C55E' },
-      { name: 'Рост', day: Math.round(plant.maturation_days * 0.35), emoji: '🌿', color: '#16A34A' },
-      { name: 'Цветение', day: Math.round(plant.maturation_days * 0.6), emoji: '🌸', color: '#EC4899' },
-      { name: 'Плоды', day: Math.round(plant.maturation_days * 0.8), emoji: '🍅', color: '#F59E0B' },
-      { name: 'Урожай', day: plant.maturation_days, emoji: '🧺', color: '#EF4444' },
+      { name: 'Посев', day: 0, color: '#8B5A2B' },
+      { name: 'Всходы', day: Math.round(plant.maturation_days * 0.1), color: '#22C55E' },
+      { name: 'Рост', day: Math.round(plant.maturation_days * 0.35), color: '#16A34A' },
+      { name: 'Цветение', day: Math.round(plant.maturation_days * 0.6), color: '#EC4899' },
+      { name: 'Плоды', day: Math.round(plant.maturation_days * 0.8), color: '#F59E0B' },
+      { name: 'Урожай', day: plant.maturation_days, color: '#EF4444' },
     ]
   }
 
@@ -361,24 +371,24 @@ export default function Reminders() {
               Умный календарь ухода
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              {stats.overdue > 0 ? `⚠️ ${stats.overdue} просроченных задач` : '🌿 Все задачи в порядке'}
+              {stats.overdue > 0 ? `${stats.overdue} просроченных задач` : 'Все задачи в порядке'}
             </p>
           </div>
           
           <div className="flex items-center gap-2">
             <div className="flex bg-gray-100 rounded-xl p-1">
               {[
-                { id: 'board', label: 'Доска', icon: '📋' },
-                { id: 'calendar', label: 'Календарь', icon: '📅' },
+                { id: 'board', label: 'Доска', icon: LayoutList },
+                { id: 'calendar', label: 'Календарь', icon: Calendar },
               ].map(v => (
                 <button 
                   key={v.id} 
                   onClick={() => setView(v.id)} 
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all min-h-[44px] ${
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all min-h-[44px] ${
                     view === v.id ? 'bg-white shadow-lg text-green-700' : 'text-gray-500'
                   }`}
                 >
-                  {v.icon} <span className="hidden sm:inline">{v.label}</span>
+                  <v.icon className="w-4 h-4" /> <span className="hidden sm:inline">{v.label}</span>
                 </button>
               ))}
             </div>
@@ -394,7 +404,7 @@ export default function Reminders() {
 
         {!loadError && reminders.length === 0 && (
           <div className="mb-6 rounded-2xl border border-green-200 bg-green-50/80 p-6 sm:p-8 text-center">
-            <span className="text-4xl block mb-3" aria-hidden="true">📋</span>
+            <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" aria-hidden="true" />
             <h2 className="text-lg font-semibold text-gray-800 mb-2">Пока нет задач</h2>
             <p className="text-sm text-gray-600 mb-4 max-w-md mx-auto">
               Добавьте напоминание вручную или посадите растение на участке — задачи по поливу появятся автоматически.
@@ -541,7 +551,7 @@ export default function Reminders() {
                                 disabled={deletingId === r.id}
                                 className="w-full text-xs bg-gray-100 text-gray-500 px-2 py-2 rounded-lg hover:bg-gray-200 transition-all min-h-[36px] disabled:opacity-50"
                               >
-                                {deletingId === r.id ? '...' : '🗑 Удалить'}
+                                {deletingId === r.id ? '...' : 'Удалить'}
                               </button>
                             </div>
                           )}
@@ -783,7 +793,7 @@ export default function Reminders() {
                         className="w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-md transition-all group-hover:scale-110"
                         style={{ backgroundColor: stage.color + '20', border: `2px solid ${stage.color}` }}
                       >
-                        {stage.emoji}
+                        <span className="text-xs font-bold" style={{ color: stage.color }}>{stage.day}</span>
                       </div>
                       <p className="text-xs font-semibold mt-2 text-gray-700">{stage.name}</p>
                       <p className="text-xs text-gray-400">{stage.day} дн.</p>
@@ -793,7 +803,7 @@ export default function Reminders() {
               </div>
 
               <div className="mt-4 border-t pt-4">
-                <h4 className="font-semibold text-sm mb-3">📋 Связанные задачи</h4>
+                <h4 className="font-semibold text-sm mb-3">Связанные задачи</h4>
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
                   {reminders.filter(r => r.plant_id === selectedReminder.plant_id).slice(0, 5).map(r => (
                     <div key={r.id} className="flex items-center gap-2 text-sm py-2 px-2 bg-gray-50 rounded-xl">
@@ -847,11 +857,11 @@ export default function Reminders() {
                 onChange={e => setNewTask({...newTask, type: e.target.value})} 
                 className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-200 transition-all bg-white"
               >
-                <option value="watering">💧 Полив</option>
-                <option value="fertilizing">✨ Подкормка</option>
-                <option value="transplant">🌱 Пересадка</option>
-                <option value="harvest">✂️ Сбор урожая</option>
-                <option value="custom">📝 Другое</option>
+                <option value="watering">{TASK_TYPE_LABELS.watering}</option>
+                <option value="fertilizing">{TASK_TYPE_LABELS.fertilizing}</option>
+                <option value="transplant">{TASK_TYPE_LABELS.transplant}</option>
+                <option value="harvest">{TASK_TYPE_LABELS.harvest}</option>
+                <option value="custom">{TASK_TYPE_LABELS.custom}</option>
               </select>
               
               <input 
@@ -866,8 +876,8 @@ export default function Reminders() {
                 onChange={e => setNewTask({...newTask, plant_id: e.target.value})} 
                 className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-200 transition-all bg-white"
               >
-                <option value="">🌿 Без растения</option>
-                {plants.map(p => <option key={p.id} value={p.id}>🌱 {p.name}</option>)}
+                <option value="">Без растения</option>
+                {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               
               <div>

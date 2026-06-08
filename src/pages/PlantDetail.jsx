@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { ArrowLeft, Droplets, Calendar, Sprout, Shield, FlaskRound as Flask, Bug } from 'lucide-react'
+import { ArrowLeft, Droplets, Calendar, Sprout, Shield, FlaskRound as Flask, Bug, CheckCircle, XCircle, Minus, Wheat } from 'lucide-react'
 import PlantImage from '../components/PlantImage'
 import FavoriteButton from '../components/FavoriteButton'
 import Header from '../components/Header'
@@ -121,10 +121,7 @@ export default function PlantDetail() {
             <div className="flex-1 flex items-start justify-between gap-3">
               <div>
                 <h1 className="text-3xl font-bold text-gray-800">{plant.name}</h1>
-                <p className="text-gray-500 flex items-center gap-1 mt-1">
-                  <span>{plant.category?.icon}</span>
-                  <span>{plant.category?.name}</span>
-                </p>
+                <p className="text-gray-500 mt-1">{plant.category?.name}</p>
                 {plant.scientific_name && (
                   <p className="text-sm text-gray-400 italic mt-1">{plant.scientific_name}</p>
                 )}
@@ -163,19 +160,20 @@ export default function PlantDetail() {
         <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
           <div className="flex gap-4 border-b pb-2">
             {[
-              { key: 'info', label: '📋 Общее', icon: Sprout },
-              { key: 'varieties', label: '🌾 Сорта', icon: Sprout },
-              { key: 'companions', label: '🤝 Совместимость', icon: Shield },
-              { key: 'fertilizers', label: '🧪 Удобрения', icon: Flask },
-              { key: 'issues', label: '🐛 Болезни', icon: Bug },
+              { key: 'info', label: 'Общее', icon: Sprout },
+              { key: 'varieties', label: 'Сорта', icon: Wheat },
+              { key: 'companions', label: 'Совместимость', icon: Shield },
+              { key: 'fertilizers', label: 'Удобрения', icon: Flask },
+              { key: 'issues', label: 'Болезни', icon: Bug },
             ].map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2 font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-4 py-2 font-medium transition-colors ${
                   activeTab === tab.key ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500'
                 }`}
               >
+                <tab.icon className="w-4 h-4" />
                 {tab.label}
               </button>
             ))}
@@ -232,7 +230,13 @@ export default function PlantDetail() {
                         compact
                       />
                     </Link>
-                    <span className="text-2xl shrink-0" aria-hidden="true">{c.relationship === 'good' ? '✅' : c.relationship === 'bad' ? '❌' : '➖'}</span>
+                    {c.relationship === 'good' ? (
+                      <CheckCircle className="w-5 h-5 text-green-600 shrink-0" aria-label="Хорошая совместимость" />
+                    ) : c.relationship === 'bad' ? (
+                      <XCircle className="w-5 h-5 text-red-500 shrink-0" aria-label="Плохая совместимость" />
+                    ) : (
+                      <Minus className="w-5 h-5 text-gray-400 shrink-0" aria-label="Нейтрально" />
+                    )}
                     <div className="min-w-0">
                       <Link to={`/plant/${c.companion?.id}`} className="font-medium hover:text-green-700">
                         {c.companion?.name}

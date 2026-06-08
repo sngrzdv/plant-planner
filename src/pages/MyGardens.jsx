@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { Plus, Trash2, Eye, Edit, Home, MapPin, Image, X } from 'lucide-react'
@@ -13,6 +13,7 @@ import PlantImage from '../components/PlantImage'
 export default function MyGardens() {
   const { user } = useAuthStore()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [gardens, setGardens] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -42,6 +43,14 @@ export default function MyGardens() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadGardens()
   }, [loadGardens])
+
+  useEffect(() => {
+    if (searchParams.get('action') !== 'create') return
+    setShowModal(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('action')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   function handlePhotoSelect(e) {
     const file = e.target.files[0]

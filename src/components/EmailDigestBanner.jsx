@@ -19,8 +19,8 @@ export default function EmailDigestBanner({ profile, reminders, onDismiss }) {
       <div className="flex-1 min-w-0">
         <p className="font-medium text-blue-900 text-sm">
           {overdue.length > 0
-            ? `📧 ${overdue.length} просроченных и ${todayTasks.length} на сегодня`
-            : `📧 ${todayTasks.length} ${todayTasks.length === 1 ? 'задача' : 'задач'} на сегодня`}
+            ? `${overdue.length} просроченных и ${todayTasks.length} на сегодня`
+            : `${todayTasks.length} ${todayTasks.length === 1 ? 'задача' : 'задач'} на сегодня`}
         </p>
         <p className="text-xs text-blue-700/80 mt-0.5">
           Email-напоминания включены — сформируйте письмо себе на {profile.email}

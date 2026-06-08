@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { useReferenceStore } from '../store/referenceStore'
 import { 
-  Search, Sprout, Droplets, Calendar, X, Plus, Heart
+  Search, Sprout, Droplets, Calendar, X, Plus, Heart, BookOpen, PenLine
 } from 'lucide-react'
 import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
@@ -215,16 +215,16 @@ export default function PlantsCatalog() {
           <div className="flex items-center gap-2">
             <div className="flex bg-gray-100 rounded-xl p-1">
               <button onClick={() => setActiveTab('catalog')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   activeTab === 'catalog' ? 'bg-white shadow text-green-700' : 'text-gray-500'
                 }`}>
-                📚 Каталог
+                <BookOpen className="w-4 h-4" /> Каталог
               </button>
               <button onClick={() => setActiveTab('add')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   activeTab === 'add' ? 'bg-white shadow text-green-700' : 'text-gray-500'
                 }`}>
-                ✏️ Своё растение
+                <PenLine className="w-4 h-4" /> Своё растение
               </button>
             </div>
             {isAdmin && activeTab === 'catalog' && (
@@ -300,10 +300,10 @@ export default function PlantsCatalog() {
                     {/* Бейджи */}
                     <div className="absolute top-2 left-2 flex flex-col gap-1">
                       {plant.planting_method === 'seedling' && (
-                        <span className="text-[10px] bg-amber-100/90 text-amber-800 px-2 py-0.5 rounded-full backdrop-blur-sm">🌱 Рассада</span>
+                        <span className="text-[10px] bg-amber-100/90 text-amber-800 px-2 py-0.5 rounded-full backdrop-blur-sm">Рассада</span>
                       )}
                       {plant.planting_method === 'direct' && (
-                        <span className="text-[10px] bg-green-100/90 text-green-800 px-2 py-0.5 rounded-full backdrop-blur-sm">🌍 Прямой посев</span>
+                        <span className="text-[10px] bg-green-100/90 text-green-800 px-2 py-0.5 rounded-full backdrop-blur-sm">Прямой посев</span>
                       )}
                     </div>
                     
@@ -333,9 +333,8 @@ export default function PlantsCatalog() {
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h3 className="font-semibold text-gray-800">{plant.name}</h3>
-                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                          <span>{plant.category?.icon}</span>
-                          <span>{plant.category?.name}</span>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {plant.category?.name}
                         </p>
                       </div>
                       {isAdmin && (
@@ -415,9 +414,9 @@ export default function PlantsCatalog() {
                   <label className="block text-sm font-medium mb-1">Способ посадки</label>
                   <select value={newPlant.planting_method} onChange={e => setNewPlant({...newPlant, planting_method: e.target.value})}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
-                    <option value="direct">🌍 Прямой посев</option>
-                    <option value="seedling">🌱 Рассада</option>
-                    <option value="perennial">🌳 Многолетник</option>
+                    <option value="direct">Прямой посев</option>
+                    <option value="seedling">Рассада</option>
+                    <option value="perennial">Многолетник</option>
                   </select>
                 </div>
               </div>

@@ -7,7 +7,7 @@ import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
 import { 
   LayoutGrid, Flower, Calendar, 
-  CheckCircle, BookOpen, Moon
+  CheckCircle, BookOpen, Moon, CloudRain, Droplets, Wind, Leaf, Sprout, Zap
 } from 'lucide-react'
 import Header from './components/Header'
 import EmailDigestBanner from './components/EmailDigestBanner'
@@ -46,7 +46,7 @@ function getLunarAdviceForToday() {
     return { text: `${moonData.phase}. Хорошо для корнеплодов, обрезки и полива.`, emoji: moonData.emoji }
   } catch (error) {
     console.debug('Lunar advice unavailable', error)
-    return { text: '', emoji: '🌙' }
+    return { text: '', emoji: null }
   }
 }
 
@@ -269,7 +269,7 @@ function Dashboard() {
       setTodayTasks(prev => prev.filter(task => task.id !== taskId))
       setStats(prev => ({ ...prev, tasks: Math.max(0, prev.tasks - 1) }))
       
-      notificationService.success('Задача выполнена! 🌟')
+      notificationService.success('Задача выполнена')
     } catch (e) {
       console.error('Error completing task:', e)
       notificationService.error('Не удалось выполнить задачу')
@@ -303,8 +303,8 @@ function Dashboard() {
         <div className={`grid grid-cols-1 gap-3 sm:gap-4 ${prefs.lunarEnabled ? 'sm:grid-cols-2' : ''}`}>
           {weatherError ? (
             <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 text-center">
-              <span className="text-2xl">🌧️</span>
-              <p className="text-xs text-gray-400 mt-1">Погода не загрузилась</p>
+              <CloudRain className="w-10 h-10 text-gray-300 mx-auto" aria-hidden="true" />
+              <p className="text-xs text-gray-400 mt-2">Погода не загрузилась</p>
             </div>
           ) : weather ? (
             <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-3">
@@ -317,8 +317,8 @@ function Dashboard() {
                 <p className="text-4xl sm:text-5xl font-light">{weather.temp}°</p>
                 <p className="text-sm text-gray-500 capitalize">{weather.description}</p>
                 <div className="flex gap-3 mt-1 text-xs text-gray-400">
-                  <span className="flex items-center gap-1">💧 {weather.humidity}%</span>
-                  <span className="flex items-center gap-1">💨 {weather.windSpeed} м/с</span>
+                  <span className="flex items-center gap-1"><Droplets className="w-3 h-3" /> {weather.humidity}%</span>
+                  <span className="flex items-center gap-1"><Wind className="w-3 h-3" /> {weather.windSpeed} м/с</span>
                 </div>
               </div>
             </div>
@@ -330,7 +330,9 @@ function Dashboard() {
 
           {prefs.lunarEnabled && (
             <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-4">
-              <span className="text-4xl" role="img" aria-label="луна">{lunarAdvice.emoji}</span>
+              <span className="text-4xl shrink-0" role="img" aria-label={lunarAdvice.text || 'Фаза луны'}>
+                {lunarAdvice.emoji || '🌙'}
+              </span>
               <p className="text-sm text-gray-600 leading-relaxed">{lunarAdvice.text}</p>
             </div>
           )}
@@ -364,7 +366,7 @@ function Dashboard() {
             ) : todayTasks.length === 0 ? (
               <div className="text-center py-6">
                 <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
-                <p className="text-gray-500">Задач на сегодня нет! 🌟</p>
+                <p className="text-gray-500">Задач на сегодня нет</p>
                 <Link to="/reminders" className="inline-block mt-3 text-sm text-green-600">
                   + Создать задачу
                 </Link>
@@ -373,9 +375,7 @@ function Dashboard() {
               <div className="space-y-2">
                 {todayTasks.map(task => (
                   <div key={task.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <span className="text-xl" role="img" aria-label="тип задачи">
-                      {task.type === 'watering' ? '💧' : task.type === 'fertilizing' ? '🌿' : '🌱'}
-                    </span>
+                    <TaskTypeIcon type={task.type} />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{task.title}</p>
                       {task.plants?.name && (
@@ -402,13 +402,12 @@ function Dashboard() {
 
           <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
             <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <span className="text-lg">⚡</span>
               Быстрые действия
             </h3>
             <div className="space-y-2">
-              <QuickLink to="/gardens" icon={<LayoutGrid className="w-5 h-5 text-green-600" />} label="Создать участок" />
-              <QuickLink to="/pots" icon={<Flower className="w-5 h-5 text-amber-600" />} label="Посадить рассаду" />
-              <QuickLink to="/reminders" icon={<Calendar className="w-5 h-5 text-red-600" />} label="Добавить задачу" />
+              <QuickLink to="/gardens?action=create" icon={<LayoutGrid className="w-5 h-5 text-green-600" />} label="Создать участок" />
+              <QuickLink to="/pots?action=add" icon={<Flower className="w-5 h-5 text-amber-600" />} label="Посадить рассаду" />
+              <QuickLink to="/reminders?action=add" icon={<Calendar className="w-5 h-5 text-red-600" />} label="Добавить задачу" />
               <QuickLink to="/catalog" icon={<BookOpen className="w-5 h-5 text-blue-600" />} label="Открыть каталог" />
               <QuickLink to="/lunar" icon={<Moon className="w-5 h-5 text-purple-600" />} label="Лунный календарь" />
             </div>
@@ -418,6 +417,12 @@ function Dashboard() {
       <MobileNav />
     </div>
   )
+}
+
+function TaskTypeIcon({ type }) {
+  if (type === 'watering') return <Droplets className="w-5 h-5 text-blue-500 shrink-0" aria-hidden="true" />
+  if (type === 'fertilizing') return <Leaf className="w-5 h-5 text-green-600 shrink-0" aria-hidden="true" />
+  return <Sprout className="w-5 h-5 text-green-500 shrink-0" aria-hidden="true" />
 }
 
 function StatCard({ title, value, icon, color, link }) {

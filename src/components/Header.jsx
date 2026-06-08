@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { Sprout, LogOut } from 'lucide-react'
+import { Sprout, LogOut, Shield } from 'lucide-react'
 import AvatarImage from './AvatarImage'
 
 export default function Header() {
@@ -22,7 +22,7 @@ export default function Header() {
         <div className="flex items-center gap-2 sm:gap-3">
           {isAdmin && (
             <Link to="/admin" className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
-              ⚙️ Админ
+              <Shield className="w-3.5 h-3.5" /> Админ
             </Link>
           )}
           <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-gray-200">

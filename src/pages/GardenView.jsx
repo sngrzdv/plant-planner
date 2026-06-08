@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search } from 'lucide-react'
+import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search, MousePointer2 } from 'lucide-react'
 import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
 import { useAuthStore } from '../store/authStore'
@@ -10,8 +10,8 @@ import { useReferenceStore } from '../store/referenceStore'
 import { toast } from '../store/toastStore'
 import PageNotFound from '../components/PageNotFound'
 
-const ZONE_ICONS = {
-  house: '🏠', rect: '🥬', flowerbed: '🌸', tree: '🌳', greenhouse: '🏡', bush: '🪴', path: '🪨', pond: '💧',
+const ZONE_SHORT = {
+  house: 'З', rect: 'О', flowerbed: 'К', tree: 'Д', greenhouse: 'Т', bush: 'К', path: '↔', pond: 'В',
 }
 const ZONE_NAMES = {
   house: 'Дом', rect: 'Грядка', flowerbed: 'Клумба', tree: 'Дерево', greenhouse: 'Теплица', bush: 'Куст', path: 'Дорожка', pond: 'Водоём'
@@ -82,7 +82,7 @@ export default function GardenView() {
       allZonePlants.push({
         id: p.id,
         plants: p.plants,
-        source: p.source_type === 'pot' ? '🪴 Из рассады' : '🌱 Посажено',
+        source: p.source_type === 'pot' ? 'Из рассады' : 'Посажено',
         watering: p.plants?.watering_freq_days,
         maturation: p.plants?.maturation_days,
       })
@@ -95,7 +95,7 @@ export default function GardenView() {
       allZonePlants.push({
         id: p.id,
         plants: p.plant,
-        source: '📐 Из редактора грядки',
+        source: 'Из редактора грядки',
         watering: p.plant?.watering_freq_days,
         maturation: p.plant?.maturation_days,
       })
@@ -269,13 +269,8 @@ export default function GardenView() {
                   >
                     <div className="text-center pointer-events-none">
                       {/* Иконка зоны или признак посаженного растения */}
-                      <span className="text-xl sm:text-2xl block">
-                        {zone.plant_id ? (
-                          // Если посажено растение — показываем 🌳 или 🌿
-                          zone.type === 'tree' ? '🌳' : zone.type === 'bush' ? '🪴' : '🌿'
-                        ) : (
-                          ZONE_ICONS[zone.type] || '🟫'
-                        )}
+                      <span className="text-sm sm:text-base font-semibold block text-gray-700">
+                        {ZONE_SHORT[zone.type] || '?'}
                       </span>
                       
                       {/* Название зоны или название растения */}
@@ -304,20 +299,20 @@ export default function GardenView() {
             </div>
             
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="text-xl">{ZONE_ICONS[selectedZone.type]}</span>
+              <span className="text-sm font-semibold w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">{ZONE_SHORT[selectedZone.type] || '?'}</span>
               <span>{ZONE_NAMES[selectedZone.type]}</span>
             </div>
             
-            {selectedZone.soil_type && <p className="text-sm text-gray-500">🌍 Почва: {selectedZone.soil_type}</p>}
+            {selectedZone.soil_type && <p className="text-sm text-gray-500">Почва: {selectedZone.soil_type}</p>}
             {selectedZone.notes && <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">{selectedZone.notes}</p>}
 
             {(selectedZone.type === 'rect' || selectedZone.type === 'flowerbed' || selectedZone.type === 'greenhouse') && (
               <div className="flex gap-2">
                 <button onClick={() => navigate(`/bed/${selectedZone.id}/edit`)} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-                  ✏️ Редактировать
+                  Редактировать
                 </button>
                 <button onClick={openPlantModal} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
-                  🌱 Посадить
+                  Посадить
                 </button>
               </div>
             )}
@@ -325,13 +320,13 @@ export default function GardenView() {
             {(selectedZone.type === 'tree' || selectedZone.type === 'bush') && (
               <div className="flex gap-2">
                 <button onClick={openPlantModal} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
-                  🌳 Посадить растение
+                  Посадить растение
                 </button>
               </div>
             )}
 
             <div className="border-t pt-3">
-              <h4 className="text-sm font-medium mb-3">🌱 Растения ({plants.length})</h4>
+              <h4 className="text-sm font-medium mb-3">Растения ({plants.length})</h4>
               {plants.length === 0 ? (
                 <p className="text-sm text-gray-400">Пока ничего не посажено</p>
               ) : (
@@ -358,7 +353,7 @@ export default function GardenView() {
             <p className="text-gray-400 text-sm text-center">
               Кликните на зону участка,<br/>чтобы увидеть информацию
               <br/><br/>
-              <span className="text-xs">🖱️ Двойной клик по грядке —<br/>открыть редактор грядки</span>
+              <span className="text-xs flex items-center gap-1"><MousePointer2 className="w-3 h-3" /> Двойной клик по грядке —<br/>открыть редактор грядки</span>
             </p>
           </div>
         )}
@@ -392,7 +387,8 @@ export default function GardenView() {
                   <div className="flex-1">
                     <p className="font-medium text-sm">{plant.name}</p>
                     <p className="text-xs text-gray-500">
-                      💧 раз в {plant.watering_freq_days} дн. | 📅 {plant.maturation_days} дн.
+                      <span className="flex items-center gap-1"><Droplets className="w-3 h-3" /> раз в {plant.watering_freq_days} дн.</span>
+                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {plant.maturation_days} дн.</span>
                     </p>
                   </div>
                   <Plus className="w-4 h-4 text-green-600" />

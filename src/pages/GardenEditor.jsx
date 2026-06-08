@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Home, Square, Flower2, TreePine, Warehouse, Trash2, Plus, Minus, Eye } from 'lucide-react'
+import { ArrowLeft, Home, Square, Flower2, TreePine, Warehouse, Trash2, Plus, Minus, Eye, SquarePen, MousePointer2 } from 'lucide-react'
 import { Rnd } from 'react-rnd'
 import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
@@ -11,14 +11,14 @@ import { confirm } from '../store/confirmStore'
 import PageNotFound from '../components/PageNotFound'
 
 const ZONE_TYPES = [
-  { type: 'house', name: 'Здание', icon: '🏠', color: '#D4A574', defaultW: 150, defaultH: 120 },
-  { type: 'rect', name: 'Огород', icon: '🥬', color: '#8B5A2B', defaultW: 120, defaultH: 80 },
-  { type: 'flowerbed', name: 'Клумба', icon: '🌸', color: '#E8A0BF', defaultW: 100, defaultH: 100 },
-  { type: 'tree', name: 'Дерево', icon: '🌳', color: '#2D6A4F', defaultW: 60, defaultH: 60 },
-  { type: 'greenhouse', name: 'Теплица', icon: '🏡', color: '#A7C7E7', defaultW: 160, defaultH: 120 },
-  { type: 'bush', name: 'Куст', icon: '🪴', color: '#228B22', defaultW: 50, defaultH: 50 },
-  { type: 'path', name: 'Дорожка', icon: '🪨', color: '#C4A882', defaultW: 200, defaultH: 20 },
-  { type: 'pond', name: 'Водоём', icon: '💧', color: '#4A90D9', defaultW: 150, defaultH: 150 },
+  { type: 'house', name: 'Здание', shortLabel: 'З', color: '#D4A574', defaultW: 150, defaultH: 120 },
+  { type: 'rect', name: 'Огород', shortLabel: 'О', color: '#8B5A2B', defaultW: 120, defaultH: 80 },
+  { type: 'flowerbed', name: 'Клумба', shortLabel: 'К', color: '#E8A0BF', defaultW: 100, defaultH: 100 },
+  { type: 'tree', name: 'Дерево', shortLabel: 'Д', color: '#2D6A4F', defaultW: 60, defaultH: 60 },
+  { type: 'greenhouse', name: 'Теплица', shortLabel: 'Т', color: '#A7C7E7', defaultW: 160, defaultH: 120 },
+  { type: 'bush', name: 'Куст', shortLabel: 'К', color: '#228B22', defaultW: 50, defaultH: 50 },
+  { type: 'path', name: 'Дорожка', shortLabel: '↔', color: '#C4A882', defaultW: 200, defaultH: 20 },
+  { type: 'pond', name: 'Водоём', shortLabel: 'В', color: '#4A90D9', defaultW: 150, defaultH: 150 },
 ]
 
 export default function GardenEditor() {
@@ -211,7 +211,7 @@ export default function GardenEditor() {
             <Plus className="w-3.5 h-3.5" />
           </button>
           <span className="text-xs text-gray-400 ml-2 hidden sm:block">
-            🖱️ Зажмите и тяните — двигать холст | Колёсико — зум
+            Зажмите и тяните — двигать холст · Колёсико — зум
           </span>
         </div>
       </header>
@@ -221,7 +221,7 @@ export default function GardenEditor() {
         <aside className="w-56 bg-white/95 backdrop-blur-sm border-r border-gray-200 flex flex-col shrink-0 z-20 overflow-y-auto shadow-sm">
           {/* Заголовок */}
           <div className="p-4 border-b border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-700">🏗️ Инструменты</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Инструменты</h3>
             <p className="text-[11px] text-gray-400 mt-0.5">Добавьте зоны на участок</p>
           </div>
 
@@ -235,7 +235,7 @@ export default function GardenEditor() {
                 title={`Добавить: ${zt.name}`}
               >
                 <span className="text-xl w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  {zt.icon}
+                  {zt.shortLabel}
                 </span>
                 <span className="text-sm font-medium text-gray-700">{zt.name}</span>
               </button>
@@ -248,7 +248,7 @@ export default function GardenEditor() {
           {/* Панель свойств выделенной зоны */}
           {selectedZone && (selectedZone.type === 'tree' || selectedZone.type === 'bush') && (
             <button onClick={openPlantModal} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 text-green-700 text-xs hover:bg-green-100">
-              🌳 Выбрать растение
+              Выбрать растение
             </button>
           )}
           {selectedZone ? (
@@ -294,7 +294,7 @@ export default function GardenEditor() {
                     onClick={() => { setZoneName(selectedZone.name || ''); setEditingName(true); }}
                     className="w-full flex items-center gap-2 px-3 py-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 text-sm text-gray-700 transition-colors"
                   >
-                    <span>✏️</span>
+                    <SquarePen className="w-4 h-4 text-gray-500" />
                     <span className="truncate">{selectedZone.name || 'Без названия'}</span>
                   </button>
                 )}
@@ -305,7 +305,7 @@ export default function GardenEditor() {
                 <label className="text-xs text-gray-500 mb-1.5 block">Тип зоны</label>
                 <div className="flex items-center gap-3 text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2.5">
                   <span className="text-xl">
-                    {ZONE_TYPES.find(z => z.type === selectedZone.type)?.icon || '🟫'}
+                    {ZONE_TYPES.find(z => z.type === selectedZone.type)?.shortLabel || '?'}
                   </span>
                   <span className="font-medium">
                     {ZONE_TYPES.find(z => z.type === selectedZone.type)?.name || selectedZone.type}
@@ -348,7 +348,7 @@ export default function GardenEditor() {
           ) : (
             <div className="p-4">
               <div className="text-center py-6 text-gray-400">
-                <span className="text-3xl block mb-2">👆</span>
+                <MousePointer2 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                 <p className="text-sm">Выберите зону на холсте</p>
                 <p className="text-xs mt-1">чтобы изменить её свойства</p>
               </div>
@@ -358,10 +358,10 @@ export default function GardenEditor() {
           {/* Подсказки внизу */}
           <div className="mt-auto p-4 border-t border-gray-100">
             <div className="text-xs text-gray-400 space-y-1.5">
-              <p className="flex items-center gap-2"><span>🖱️</span> Зажмите — двигать холст</p>
-              <p className="flex items-center gap-2"><span>🔄</span> Колёсико — зум</p>
-              <p className="flex items-center gap-2"><span>📏</span> Тяните за уголки — размер</p>
-              {selectedZone && <p className="flex items-center gap-2"><span>⌨️</span> Enter — сохранить имя</p>}
+              <p>Зажмите — двигать холст</p>
+              <p>Колёсико — зум</p>
+              <p>Тяните за уголки — размер</p>
+              {selectedZone && <p>Enter — сохранить имя</p>}
             </div>
           </div>
         </aside>
@@ -428,7 +428,7 @@ export default function GardenEditor() {
                   >
                     <div className="text-center pointer-events-none">
                       <span className="text-2xl block">
-                        {ZONE_TYPES.find(z => z.type === zone.type)?.icon || '🟫'}
+                        {ZONE_TYPES.find(z => z.type === zone.type)?.shortLabel || '?'}
                       </span>
                       <span className="text-[10px] font-medium text-gray-700 bg-white/60 px-1.5 py-0.5 rounded">
                         {zone.name}
