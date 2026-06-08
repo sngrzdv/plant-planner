@@ -10,6 +10,8 @@ function sanitizeCachedProfile(profile) {
     email: profile.email,
     full_name: profile.full_name,
     city: profile.city,
+    role_id: profile.role_id,
+    is_blocked: profile.is_blocked,
     notification_enabled: profile.notification_enabled,
     created_at: profile.created_at,
   }
@@ -47,7 +49,7 @@ export const useAuthStore = create((set, get) => ({
   setProfile: (profile) => {
     set({
       profile,
-      isAdmin: profile?.role_id === 2,
+      isAdmin: profile?.role_id === 2 && !profile?.is_blocked,
     })
   },
 

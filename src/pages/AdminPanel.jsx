@@ -5,10 +5,23 @@ import { useAuthStore } from '../store/authStore'
 import { useReferenceStore } from '../store/referenceStore'
 import { 
   Users, Sprout, Shield, Database, Trash2, Plus, BookOpen, 
-  Search, X, Edit
+  Search, X, Edit, ClipboardList, Check, Ban
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
+import PlantImage from '../components/PlantImage'
+import { toast } from '../store/toastStore'
+import { confirm } from '../store/confirmStore'
+import { formatSupabaseError } from '../lib/formatSupabaseError'
+
+const ADMIN_RLS_SQL = 'supabase/fix_admin_category_insert.sql'
+import { uploadPlantImage, deletePlantImage } from '../services/plantImageStorage'
+import { resolvePlantImageUrl } from '../lib/plantImageUrl'
+import {
+  approveSubmission,
+  rejectSubmission,
+  fetchPendingSubmissions,
+} from '../services/userPlantService'
 
 export default function AdminPanel() {
   const { profile, isAdmin } = useAuthStore()
@@ -18,6 +31,7 @@ export default function AdminPanel() {
   const [categories, setCategories] = useState([])
   const [fertilizers, setFertilizers] = useState([])
   const [issues, setIssues] = useState([])
+  const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [adminError, setAdminError] = useState('')
@@ -32,6 +46,9 @@ export default function AdminPanel() {
   const [showIssueForm, setShowIssueForm] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editPlantId, setEditPlantId] = useState(null)
+  const [plantPhotoFile, setPlantPhotoFile] = useState(null)
+  const [plantPhotoPreview, setPlantPhotoPreview] = useState(null)
+  const [uploadingPlant, setUploadingPlant] = useState(false)
   
   const [newPlant, setNewPlant] = useState({
     name: '', category_id: '', watering_freq_days: 3, maturation_days: 60,
@@ -47,9 +64,22 @@ export default function AdminPanel() {
   })
   
   useEffect(() => { loadAllData() }, [])
+
+  useEffect(() => {
+    const userId = profile?.id
+    if (!userId) return
+    useAuthStore.getState().loadProfile(userId, { force: true })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- refresh admin role once on open
   
   async function loadAllData() {
     setAdminError('')
+    let submissionsData = []
+    try {
+      submissionsData = await fetchPendingSubmissions()
+    } catch {
+      submissionsData = []
+    }
+
     const [
       { data: usersData, error: usersError }, { data: plantsData, error: plantsError }, { data: catData, error: catError },
       { data: fertData, error: fertError }, { data: issuesData, error: issuesError }
@@ -63,7 +93,9 @@ export default function AdminPanel() {
 
     const firstError = usersError || plantsError || catError || fertError || issuesError
     if (firstError) {
-      setAdminError(`Не удалось загрузить данные админки: ${firstError.message}`)
+      setAdminError(formatSupabaseError(firstError, ADMIN_RLS_SQL))
+    } else {
+      setAdminError('')
     }
     
     if (usersData) setUsers(usersData)
@@ -71,6 +103,7 @@ export default function AdminPanel() {
     if (catData) setCategories(catData)
     if (fertData) setFertilizers(fertData)
     if (issuesData) setIssues(issuesData)
+    setSubmissions(submissionsData)
     
     setAdminStats({
       users: usersData?.length || 0,
@@ -81,32 +114,81 @@ export default function AdminPanel() {
     setLoading(false)
   }
   
-  async function savePlant() {
-    if (!newPlant.name || !newPlant.category_id) return alert('Заполните название и категорию')
-    
-    const result = editMode && editPlantId
-      ? await supabase.from('plants').update(newPlant).eq('id', editPlantId)
-      : await supabase.from('plants').insert(newPlant)
+  function resetPlantForm() {
+    setNewPlant({
+      name: '', category_id: '', watering_freq_days: 3, maturation_days: 60,
+      description: '', scientific_facts: '', planting_method: 'direct',
+      days_to_transplant: 0, days_to_harvest: 60, difficulty: 'Легко',
+      sun_requirement: 'Солнце', image_url: '', sowing_depth: 1,
+      plant_spacing: 30, row_spacing: 50,
+    })
+    setPlantPhotoFile(null)
+    setPlantPhotoPreview(null)
+    setEditMode(false)
+    setEditPlantId(null)
+  }
 
-    if (result.error) {
-      alert(`Не удалось сохранить растение: ${result.error.message}`)
+  function handlePlantPhotoSelect(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPlantPhotoFile(file)
+    const reader = new FileReader()
+    reader.onload = (ev) => setPlantPhotoPreview(ev.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  async function savePlant() {
+    if (!newPlant.name || !newPlant.category_id) {
+      toast.error('Заполните название и категорию')
       return
     }
 
-    useReferenceStore.getState().invalidateReferences()
-    
-    setShowPlantForm(false)
-    setEditMode(false)
-    setEditPlantId(null)
-    setNewPlant({ name: '', category_id: '', watering_freq_days: 3, maturation_days: 60, description: '', scientific_facts: '', planting_method: 'direct', days_to_transplant: 0, days_to_harvest: 60, difficulty: 'Легко' })
-    loadAllData()
+    setUploadingPlant(true)
+    try {
+      let imageUrl = newPlant.image_url || ''
+
+      if (plantPhotoFile) {
+        const previousUrl = newPlant.image_url
+        imageUrl = await uploadPlantImage(plantPhotoFile, {
+          plantId: editPlantId,
+          plantName: newPlant.name,
+        })
+        if (previousUrl && previousUrl !== imageUrl) {
+          await deletePlantImage(previousUrl)
+        }
+      }
+
+      const payload = { ...newPlant, image_url: imageUrl || null }
+
+      const result = editMode && editPlantId
+        ? await supabase.from('plants').update(payload).eq('id', editPlantId)
+        : await supabase.from('plants').insert(payload)
+
+      if (result.error) {
+        toast.error(formatSupabaseError(result.error, ADMIN_RLS_SQL))
+        return
+      }
+
+      useReferenceStore.getState().invalidateReferences()
+      setShowPlantForm(false)
+      resetPlantForm()
+      toast.success(editMode ? 'Растение обновлено' : 'Растение добавлено')
+      loadAllData()
+    } catch (err) {
+      toast.error(err.message || 'Не удалось загрузить фото')
+    } finally {
+      setUploadingPlant(false)
+    }
   }
-  
+
   function editPlant(plant) {
     setEditMode(true)
     setEditPlantId(plant.id)
+    setPlantPhotoFile(null)
+    setPlantPhotoPreview(null)
     setNewPlant({
-      name: plant.name, category_id: plant.category_id || '',
+      name: plant.name,
+      category_id: plant.category_id || '',
       watering_freq_days: plant.watering_freq_days || 3,
       maturation_days: plant.maturation_days || 60,
       description: plant.description || '',
@@ -114,43 +196,91 @@ export default function AdminPanel() {
       planting_method: plant.planting_method || 'direct',
       days_to_transplant: plant.days_to_transplant || 0,
       days_to_harvest: plant.days_to_harvest || 60,
-      difficulty: plant.difficulty || 'Легко'
+      difficulty: plant.difficulty || 'Легко',
+      sun_requirement: plant.sun_requirement || 'Солнце',
+      image_url: plant.image_url || '',
+      sowing_depth: plant.sowing_depth ?? 1,
+      plant_spacing: plant.plant_spacing ?? 30,
+      row_spacing: plant.row_spacing ?? 50,
     })
     setShowPlantForm(true)
   }
   
+  async function handleApproveSubmission(sub) {
+    try {
+      await approveSubmission(sub)
+      useReferenceStore.getState().invalidateReferences()
+      toast.success(`«${sub.name}» добавлено в каталог`)
+      loadAllData()
+    } catch (err) {
+      toast.error(err.message || 'Не удалось одобрить')
+    }
+  }
+
+  async function handleRejectSubmission(sub) {
+    const ok = await confirm(`Отклонить заявку «${sub.name}»?`, {
+      title: 'Отклонить заявку',
+      confirmLabel: 'Отклонить',
+      destructive: true,
+    })
+    if (!ok) return
+    try {
+      await rejectSubmission(sub.id, null)
+      toast.info('Заявка отклонена')
+      loadAllData()
+    } catch (err) {
+      toast.error(err.message || 'Не удалось отклонить')
+    }
+  }
+
   async function deletePlant(id) {
-    if (!confirm('Удалить растение?')) return
+    const ok = await confirm('Удалить растение?', {
+      title: 'Удалить растение',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
     const { error } = await supabase.from('plants').delete().eq('id', id)
     if (error) {
-      alert(`Не удалось удалить растение: ${error.message}`)
+      toast.error(formatSupabaseError(error, ADMIN_RLS_SQL))
       return
     }
     useReferenceStore.getState().invalidateReferences()
+    toast.success('Растение удалено')
     loadAllData()
   }
   
   async function addCategory() {
-    if (!newCategory.name) return alert('Введите название')
+    if (!newCategory.name?.trim()) {
+      toast.error('Введите название категории')
+      return
+    }
     const { error } = await supabase.from('plant_categories').insert(newCategory)
     if (error) {
-      alert(`Не удалось добавить категорию: ${error.message}`)
+      toast.error(formatSupabaseError(error, ADMIN_RLS_SQL))
       return
     }
     useReferenceStore.getState().invalidateReferences()
     setShowCategoryForm(false)
     setNewCategory({ name: '', icon: '🌱' })
+    toast.success('Категория добавлена')
     loadAllData()
   }
   
   async function deleteCategory(id) {
-    if (!confirm('Удалить категорию?')) return
+    const ok = await confirm('Удалить категорию?', {
+      title: 'Удалить категорию',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
     const { error } = await supabase.from('plant_categories').delete().eq('id', id)
     if (error) {
-      alert(`Не удалось удалить категорию: ${error.message}`)
+      toast.error(formatSupabaseError(error, ADMIN_RLS_SQL))
       return
     }
     useReferenceStore.getState().invalidateReferences()
+    toast.success('Категория удалена')
     loadAllData()
   }
   
@@ -203,6 +333,7 @@ export default function AdminPanel() {
   const tabs = [
     { key: 'users', label: 'Пользователи', icon: Users, count: adminStats.users },
     { key: 'plants', label: 'Растения', icon: Sprout, count: adminStats.plants },
+    { key: 'submissions', label: 'Заявки', icon: ClipboardList, count: submissions.length },
     { key: 'categories', label: 'Категории', icon: BookOpen, count: adminStats.categories },
     { key: 'fertilizers', label: 'Удобрения', icon: Shield, count: fertilizers.length },
     { key: 'issues', label: 'Болезни', icon: Database, count: issues.length },
@@ -237,19 +368,27 @@ export default function AdminPanel() {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
               <Shield className="w-6 h-6 text-purple-600" /> Панель администратора
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Управление системой</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Управление системой
+              {profile?.email && (
+                <span className="text-gray-400"> · {profile.email}</span>
+              )}
+            </p>
           </div>
           <Link to="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">← На главную</Link>
         </div>
 
         {adminError && (
-          <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
-            {adminError}
+          <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
+            <p>{adminError}</p>
+            <p className="text-xs mt-2 text-red-700">
+              Убедитесь, что в таблице profiles у вашего пользователя <code className="bg-red-100 px-1 rounded">role_id = 2</code>.
+            </p>
           </div>
         )}
         
         {/* Статистика */}
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
           {tabs.map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
               className={`rounded-2xl p-3 sm:p-4 text-center transition-all ${
@@ -312,12 +451,21 @@ export default function AdminPanel() {
                               <button
                                 onClick={async () => {
                                   const action = isBlocked ? 'разблокировать' : 'заблокировать'
-                                  if (!confirm(`${action === 'заблокировать' ? 'Заблокировать' : 'Разблокировать'} пользователя ${u.email}?`)) return
+                                  const ok = await confirm(
+                                    `${action === 'заблокировать' ? 'Заблокировать' : 'Разблокировать'} пользователя ${u.email}?`,
+                                    {
+                                      title: action === 'заблокировать' ? 'Заблокировать' : 'Разблокировать',
+                                      confirmLabel: 'Да',
+                                      destructive: action === 'заблокировать',
+                                    }
+                                  )
+                                  if (!ok) return
                                   const { error } = await supabase.from('profiles').update({ is_blocked: !isBlocked }).eq('id', u.id)
                                   if (error) {
-                                    alert(`Не удалось изменить статус пользователя: ${error.message}`)
+                                    toast.error(formatSupabaseError(error, ADMIN_RLS_SQL))
                                     return
                                   }
+                                  toast.success('Статус пользователя обновлён')
                                   loadAllData()
                                 }}
                                 className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
@@ -355,13 +503,7 @@ export default function AdminPanel() {
                   <input type="text" placeholder="Поиск..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                     className="pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm" />
                 </div>
-                <button onClick={() => { setEditMode(false); setNewPlant({
-                  name: '', category_id: '', watering_freq_days: 3, maturation_days: 60,
-                  description: '', scientific_facts: '', planting_method: 'direct',
-                  days_to_transplant: 0, days_to_harvest: 60, difficulty: 'Легко',
-                  sun_requirement: 'Солнце', image_url: '', sowing_depth: 1,
-                  plant_spacing: 30, row_spacing: 50
-                }); setShowPlantForm(true); }}
+                <button onClick={() => { resetPlantForm(); setShowPlantForm(true); }}
                   className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-700">
                   <Plus className="w-4 h-4" /> Добавить
                 </button>
@@ -373,13 +515,13 @@ export default function AdminPanel() {
                 <div key={plant.id} className="bg-gray-50 rounded-2xl overflow-hidden hover:shadow-md transition-all group">
                   {/* Фото */}
                   <div className="h-36 bg-gradient-to-br from-gray-200 to-gray-300 relative overflow-hidden">
-                    {plant.image_url ? (
-                      <img src={plant.image_url} alt={plant.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <span className="text-4xl">{plant.category?.icon || '🌱'}</span>
-                      </div>
-                    )}
+                    <PlantImage
+                      src={plant.image_url}
+                      alt={plant.name}
+                      className="w-full h-full object-cover"
+                      fallbackIcon={plant.category?.icon || '🌱'}
+                      fallbackClassName="w-full h-full flex items-center justify-center text-4xl"
+                    />
                     {/* Бейдж */}
                     <div className="absolute top-2 left-2">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
@@ -428,6 +570,48 @@ export default function AdminPanel() {
           </div>
         )}
         
+        {/* Заявки в каталог */}
+        {activeTab === 'submissions' && (
+          <div className="bg-white rounded-2xl shadow-sm">
+            <div className="p-4 sm:p-6 border-b">
+              <h2 className="text-lg font-semibold">Заявки пользователей ({submissions.length})</h2>
+              <p className="text-sm text-gray-500 mt-1">Одобрите — растение попадёт в общий каталог</p>
+            </div>
+            <div className="p-4 space-y-3">
+              {submissions.length === 0 ? (
+                <p className="text-center text-gray-400 py-8">Нет заявок на модерации</p>
+              ) : submissions.map((sub) => (
+                <div key={sub.id} className="border border-gray-100 rounded-xl p-4 flex flex-col sm:flex-row sm:items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-gray-800">{sub.name}</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {sub.category?.icon} {sub.category?.name} · полив {sub.watering_freq_days} дн. · урожай {sub.maturation_days} дн.
+                    </p>
+                    {sub.description && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{sub.description}</p>}
+                    {sub.scientific_facts && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{sub.scientific_facts}</p>}
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleApproveSubmission(sub)}
+                      className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+                    >
+                      <Check className="w-4 h-4" /> Одобрить
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRejectSubmission(sub)}
+                      className="flex items-center gap-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100"
+                    >
+                      <Ban className="w-4 h-4" /> Отклонить
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Категории */}
         {activeTab === 'categories' && (
           <div className="bg-white rounded-2xl shadow-sm">
@@ -614,13 +798,28 @@ export default function AdminPanel() {
               </div>
             </div>
 
-            {/* Ссылка на фото */}
+            {/* Фото */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Ссылка на фото</label>
-              <input type="text" value={newPlant.image_url || ''} onChange={e => setNewPlant({...newPlant, image_url: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" placeholder="https://images.unsplash.com/..." />
-              {newPlant.image_url && (
-                <img src={newPlant.image_url} alt="" className="mt-2 w-full h-32 object-cover rounded-lg" />
+              <label className="block text-xs font-medium text-gray-700 mb-1">Фото растения</label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={handlePlantPhotoSelect}
+                className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-green-50 file:text-green-700 file:font-medium hover:file:bg-green-100"
+              />
+              <p className="text-xs text-gray-500 mt-1">JPEG, PNG, WebP или GIF, до 5 МБ. Сохраняется в Supabase Storage.</p>
+              {(plantPhotoPreview || newPlant.image_url) && (
+                <div className="mt-3 flex items-start gap-3">
+                  <PlantImage
+                    src={plantPhotoPreview || newPlant.image_url}
+                    alt="Превью"
+                    className="w-24 h-24 rounded-lg object-cover border border-gray-200"
+                    fallbackClassName="w-24 h-24 rounded-lg bg-green-50 flex items-center justify-center text-3xl"
+                  />
+                  {newPlant.image_url && !plantPhotoFile && (
+                    <p className="text-xs text-gray-500 pt-1 break-all">{resolvePlantImageUrl(newPlant.image_url)}</p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -639,9 +838,9 @@ export default function AdminPanel() {
             </div>
 
             {/* Кнопка */}
-            <button onClick={savePlant} 
-              className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium transition-colors">
-              {editMode ? '💾 Сохранить изменения' : '➕ Добавить растение'}
+            <button onClick={savePlant} disabled={uploadingPlant}
+              className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium transition-colors disabled:opacity-60">
+              {uploadingPlant ? 'Загрузка…' : editMode ? '💾 Сохранить изменения' : '➕ Добавить растение'}
             </button>
           </div>
         </Modal>

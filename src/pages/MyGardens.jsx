@@ -5,6 +5,10 @@ import { useAuthStore } from '../store/authStore'
 import { Plus, Trash2, Eye, Edit, Home, MapPin, Image, X } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
+import { toast } from '../store/toastStore'
+import { confirm } from '../store/confirmStore'
+import { uploadImage } from '../services/imageStorage'
+import PlantImage from '../components/PlantImage'
 
 export default function MyGardens() {
   const { user } = useAuthStore()
@@ -16,14 +20,21 @@ export default function MyGardens() {
   const [photo, setPhoto] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   const loadGardens = useCallback(async () => {
-    const { data } = await supabase
+    setLoadError('')
+    const { data, error } = await supabase
       .from('layouts')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-    if (data) setGardens(data)
+    if (error) {
+      setLoadError(error.message)
+      setGardens([])
+    } else if (data) {
+      setGardens(data)
+    }
     setLoading(false)
   }, [user.id])
 
@@ -44,36 +55,33 @@ export default function MyGardens() {
 
   async function uploadPhoto(file) {
     if (!file) return null
-    
-    const fileExt = file.name.split('.').pop()
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const fileName = `${user.id}-${Date.now()}.${fileExt}`
-    
-    const { data, error } = await supabase.storage
-      .from('garden-photos')
-      .upload(fileName, file, {
-        cacheControl: '3600',
-        upsert: false
-      })
-    
-    if (error) {
-      console.error('Ошибка загрузки фото:', error)
-      throw new Error(`Не удалось загрузить фото: ${error.message}`)
-    }
-    
-    const { data: urlData } = supabase.storage
-      .from('garden-photos')
-      .getPublicUrl(data.path)
-    
-    return urlData.publicUrl
+    return uploadImage(file, 'garden-photos', { path: fileName, upsert: false })
   }
 
   async function createGarden() {
-    if (!newGarden.name.trim()) return alert('Введите название')
+    if (!newGarden.name.trim()) {
+      toast.error('Введите название')
+      return
+    }
     
     setUploading(true)
 
     try {
-      const imageUrl = photo ? await uploadPhoto(photo) : null
+      let imageUrl = null
+      if (photo) {
+        try {
+          imageUrl = await uploadPhoto(photo)
+        } catch (uploadErr) {
+          const ok = await confirm(
+            'Не удалось загрузить фото (сеть или Storage). Создать участок без фото?',
+            { title: 'Фото не загрузилось', confirmLabel: 'Создать без фото' }
+          )
+          if (!ok) return
+          toast.info('Участок создаётся без фото. Загрузите garden_photos_storage.sql или попробуйте на Vercel.')
+        }
+      }
       const { data, error } = await supabase
         .from('layouts')
         .insert({
@@ -97,20 +105,26 @@ export default function MyGardens() {
       setPhotoPreview(null)
       navigate(`/garden/${data.id}/edit`)
     } catch (error) {
-      alert(`Ошибка при создании: ${error.message}`)
+      toast.error(`Ошибка при создании: ${error.message}`)
     } finally {
       setUploading(false)
     }
   }
 
   async function deleteGarden(id) {
-    if (!confirm('Удалить участок, все зоны и растения на нём?')) return
+    const ok = await confirm('Удалить участок, все зоны и растения на нём?', {
+      title: 'Удалить участок',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
     const { error } = await supabase.from('layouts').delete().eq('id', id)
     if (error) {
-      alert(`Не удалось удалить участок: ${error.message}`)
+      toast.error(`Не удалось удалить: ${error.message}`)
       return
     }
     setGardens(gardens.filter(g => g.id !== id))
+    toast.success('Участок удалён')
   }
 
   if (loading) return (
@@ -123,6 +137,14 @@ export default function MyGardens() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
       <Header />
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {loadError && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span>Не удалось загрузить участки: {loadError}</span>
+            <button type="button" onClick={() => { setLoading(true); loadGardens() }} className="px-4 py-2 bg-white border border-red-200 rounded-lg hover:bg-red-50 font-medium shrink-0">
+              Повторить
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-4 sm:mb-6">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Мои участки</h1>
@@ -137,7 +159,7 @@ export default function MyGardens() {
           </button>
         </div>
 
-        {gardens.length === 0 ? (
+        {!loadError && gardens.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
               <Home className="w-10 h-10 text-green-600" />
@@ -161,10 +183,11 @@ export default function MyGardens() {
                 {/* Фото участка */}
                 <div className="aspect-[4/3] relative overflow-hidden">
                   {garden.image_url ? (
-                    <img 
-                      src={garden.image_url} 
-                      alt={garden.name} 
+                    <PlantImage
+                      src={garden.image_url}
+                      alt={garden.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      fallbackClassName="w-full h-full bg-gradient-to-br from-green-200 via-emerald-300 to-teal-400"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-green-200 via-emerald-300 to-teal-400 flex items-center justify-center">

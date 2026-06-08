@@ -10,8 +10,18 @@ import {
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
+import PlantImage from '../components/PlantImage'
 import { notificationService } from '../services/notificationService'
+import { confirm } from '../store/confirmStore'
 import { useReferenceStore } from '../store/referenceStore'
+
+function formatLoadError(error) {
+  const message = error?.message || String(error || '')
+  if (/permission denied/i.test(message) || error?.code === '42501') {
+    return 'Нет доступа к таблице reminders. Выполните SQL из файла supabase/reminders_rls.sql в Supabase Dashboard.'
+  }
+  return message || 'Не удалось загрузить задачи'
+}
 
 const COLUMNS = [
   { id: 'overdue', title: 'Просрочено', color: 'from-red-100 to-red-50', border: 'border-red-200', icon: AlertCircle },
@@ -44,6 +54,7 @@ export default function Reminders() {
   const [reminders, setReminders] = useState([])
   const [plants, setPlants] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [view, setView] = useState('board')
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedReminder, setSelectedReminder] = useState(null)
@@ -61,14 +72,53 @@ export default function Reminders() {
   const [addingTask, setAddingTask] = useState(false)
 
   const loadReminders = useCallback(async () => {
-    const { data } = await supabase
-      .from('reminders')
-      .select(`*, plants:plant_id(id, name, watering_freq_days, maturation_days, image_url)`)
-      .eq('user_id', user.id)
-      .order('due_date', { ascending: true })
-    if (data) setReminders(data)
-    setLoading(false)
-  }, [user.id])
+    if (!user?.id) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setLoadError(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id ?? user.id
+
+      const { data, error } = await supabase
+        .from('reminders')
+        .select('id, user_id, title, type, due_date, status, plant_id, source, created_at')
+        .eq('user_id', userId)
+        .order('due_date', { ascending: true })
+
+      if (error) {
+        console.error('Reminders load error:', error)
+        setLoadError(formatLoadError(error))
+        setReminders([])
+        return
+      }
+
+      const rows = data || []
+      setReminders(rows.map((reminder) => ({ ...reminder, plants: null })))
+
+      if (!rows.length) return
+
+      void useReferenceStore.getState().getPlants().then((plantsList) => {
+        const plantById = new Map((plantsList || []).map((plant) => [plant.id, plant]))
+        setReminders((current) =>
+          current.map((reminder) => ({
+            ...reminder,
+            plants: reminder.plant_id ? plantById.get(reminder.plant_id) || null : null,
+          }))
+        )
+      })
+    } catch (err) {
+      console.error('Reminders load error:', err)
+      setLoadError(formatLoadError(err))
+      setReminders([])
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
 
   const loadPlants = useCallback(async () => {
     const data = await useReferenceStore.getState().getPlants()
@@ -86,16 +136,16 @@ export default function Reminders() {
   }, [showAddModal, loadPlants])
 
   async function completeReminder(id) {
-    const { error } = await supabase.from('reminders').update({ status: 'completed' }).eq('id', id)
+    const { error } = await supabase.from('reminders').update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    }).eq('id', id)
     if (error) {
-      if (notificationService?.error) notificationService.error('Не удалось выполнить задачу')
-      else alert(`Не удалось выполнить задачу: ${error.message}`)
+      notificationService.error('Не удалось выполнить задачу')
       return
     }
     setReminders(rs => rs.map(r => r.id === id ? { ...r, status: 'completed' } : r))
-    if (notificationService?.success) {
-      notificationService.success('Задача выполнена! 🎉')
-    }
+    notificationService.success('Задача выполнена! 🎉')
   }
 
   async function skipReminder(id) {
@@ -103,30 +153,28 @@ export default function Reminders() {
     tomorrow.setDate(tomorrow.getDate() + 1)
     const { error } = await supabase.from('reminders').update({ due_date: tomorrow.toISOString().split('T')[0] }).eq('id', id)
     if (error) {
-      if (notificationService?.error) notificationService.error('Не удалось перенести задачу')
-      else alert(`Не удалось перенести задачу: ${error.message}`)
+      notificationService.error('Не удалось перенести задачу')
       return
     }
     loadReminders()
-    if (notificationService?.info) {
-      notificationService.info('Задача перенесена на завтра')
-    }
+    notificationService.info('Задача перенесена на завтра')
   }
 
   async function deleteReminder(id) {
-    if (!window.confirm('Удалить задачу? Это действие нельзя отменить.')) return
-    
+    const ok = await confirm('Удалить задачу? Это действие нельзя отменить.', {
+      title: 'Удалить задачу',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
     setDeletingId(id)
     try {
-      await supabase.from('reminders').delete().eq('id', id)
+      const { error } = await supabase.from('reminders').delete().eq('id', id)
+      if (error) throw error
       setReminders(rs => rs.filter(r => r.id !== id))
-      if (notificationService?.success) {
-        notificationService.success('Задача удалена')
-      }
+      notificationService.success('Задача удалена')
     } catch {
-      if (notificationService?.error) {
-        notificationService.error('Не удалось удалить')
-      }
+      notificationService.error('Не удалось удалить')
     } finally {
       setDeletingId(null)
     }
@@ -134,11 +182,7 @@ export default function Reminders() {
 
   async function addReminder() {
     if (!newTask.title.trim()) {
-      if (notificationService?.error) {
-        notificationService.error('Введите название задачи')
-      } else {
-        alert('Введите название')
-      }
+      notificationService.error('Введите название задачи')
       return
     }
     
@@ -171,12 +215,10 @@ export default function Reminders() {
         }
       }
 
-      if (notificationService?.send) {
-        notificationService.send('Новая задача', {
-          body: `Задача "${newTask.title}" добавлена на ${newTask.due_date}`,
-          tag: 'new-task'
-        })
-      }
+      notificationService.send('Новая задача', {
+        body: `Задача "${newTask.title}" добавлена на ${newTask.due_date}`,
+        tag: 'new-task',
+      })
       
       const { error } = await supabase.from('reminders').insert(tasks)
       if (error) throw error
@@ -189,15 +231,10 @@ export default function Reminders() {
         repeat_days: 0 
       })
       loadReminders()
-      
-      if (notificationService?.success) {
-        notificationService.success('Задача добавлена!')
-      }
+      notificationService.success('Задача добавлена!')
     } catch (e) {
       console.error('Error adding reminder:', e)
-      if (notificationService?.error) {
-        notificationService.error('Не удалось добавить задачу')
-      }
+      notificationService.error('Не удалось добавить задачу')
     } finally {
       setAddingTask(false)
     }
@@ -277,19 +314,44 @@ export default function Reminders() {
     ]
   }
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-50">
-      <div className="relative">
-        <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
+        <Header />
+        <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-16 flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Загружаем задачи...</p>
+        </main>
+        <MobileNav />
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
       <Header />
       
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+
+        {loadError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <p className="text-sm text-red-700 flex-1">
+              {loadError}
+              {/permission denied/i.test(loadError) && (
+                <span className="block mt-1 text-red-600">
+                  Нужно добавить RLS-политику для таблицы reminders в Supabase (SQL ниже в инструкции).
+                </span>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={loadReminders}
+              className="text-sm font-medium text-red-700 hover:text-red-800 underline shrink-0"
+            >
+              Повторить
+            </button>
+          </div>
+        )}
         
         {/* Заголовок */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -329,6 +391,23 @@ export default function Reminders() {
             </button>
           </div>
         </div>
+
+        {!loadError && reminders.length === 0 && (
+          <div className="mb-6 rounded-2xl border border-green-200 bg-green-50/80 p-6 sm:p-8 text-center">
+            <span className="text-4xl block mb-3" aria-hidden="true">📋</span>
+            <h2 className="text-lg font-semibold text-gray-800 mb-2">Пока нет задач</h2>
+            <p className="text-sm text-gray-600 mb-4 max-w-md mx-auto">
+              Добавьте напоминание вручную или посадите растение на участке — задачи по поливу появятся автоматически.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-xl hover:bg-green-700 text-sm font-medium"
+            >
+              <Plus className="w-4 h-4" /> Добавить задачу
+            </button>
+          </div>
+        )}
 
         {/* Статистика */}
         <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-6">
@@ -389,11 +468,13 @@ export default function Reminders() {
                               className="flex items-center gap-1.5 mt-2 cursor-pointer" 
                               onClick={() => { setSelectedReminder(r); setShowTimeline(true); }}
                             >
-                              {r.plants.image_url ? (
-                                <img src={r.plants.image_url} className="w-5 h-5 rounded-full object-cover" alt={r.plants.name} />
-                              ) : (
-                                <span className="text-xs">🌱</span>
-                              )}
+                              <PlantImage
+                                src={r.plants.image_url}
+                                alt={r.plants.name}
+                                className="w-5 h-5 rounded-full object-cover"
+                                fallbackIcon="🌱"
+                                fallbackClassName="w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                              />
                               <span className="text-xs text-gray-500">{r.plants.name}</span>
                             </div>
                           )}
@@ -672,10 +753,13 @@ export default function Reminders() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="relative">
-                    {selectedReminder.plants.image_url ? 
-                      <img src={selectedReminder.plants.image_url} className="w-14 h-14 rounded-2xl object-cover shadow-md" alt={selectedReminder.plants.name} /> : 
-                      <div className="w-14 h-14 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center text-3xl">🌱</div>
-                    }
+                    <PlantImage
+                      src={selectedReminder.plants.image_url}
+                      alt={selectedReminder.plants.name}
+                      className="w-14 h-14 rounded-2xl object-cover shadow-md"
+                      fallbackIcon="🌱"
+                      fallbackClassName="w-14 h-14 bg-gradient-to-br from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center text-3xl"
+                    />
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-gray-800">{selectedReminder.plants.name}</h3>

@@ -16,6 +16,8 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import ResetPassword from './pages/ResetPassword'
 import MobileNav from './components/MobileNav'
+import ToastContainer from './components/ToastContainer'
+import ConfirmDialog from './components/ConfirmDialog'
 
 const MyGardens = lazy(() => import('./pages/MyGardens'))
 const GardenEditor = lazy(() => import('./pages/GardenEditor'))
@@ -47,8 +49,14 @@ function getLunarAdviceForToday() {
 
 async function safeSupabaseQuery(query, fallback) {
   try {
-    return await query
-  } catch {
+    const result = await query
+    if (result?.error) {
+      console.warn('Dashboard query error:', result.error.message)
+      return fallback
+    }
+    return result
+  } catch (err) {
+    console.warn('Dashboard query failed:', err)
     return fallback
   }
 }
@@ -126,7 +134,9 @@ function App() {
   }, [loadProfile, setLoading, setProfile, setUser])
 
   return (
-    <Router> 
+    <Router>
+      <ToastContainer />
+      <ConfirmDialog />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
@@ -229,14 +239,10 @@ function Dashboard() {
       setTodayTasks(prev => prev.filter(task => task.id !== taskId))
       setStats(prev => ({ ...prev, tasks: Math.max(0, prev.tasks - 1) }))
       
-      if (notificationService && notificationService.success) {
-        notificationService.success('Задача выполнена! 🌟')
-      }
+      notificationService.success('Задача выполнена! 🌟')
     } catch (e) {
       console.error('Error completing task:', e)
-      if (notificationService && notificationService.error) {
-        notificationService.error('Не удалось выполнить задачу')
-      }
+      notificationService.error('Не удалось выполнить задачу')
     } finally {
       setCompletingTask(null)
     }

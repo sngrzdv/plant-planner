@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Droplets, Calendar, Sprout, Shield, FlaskRound as Flask, Bug } from 'lucide-react'
+import PlantImage from '../components/PlantImage'
+import Header from '../components/Header'
+import MobileNav from '../components/MobileNav'
+import PageNotFound from '../components/PageNotFound'
 
 export default function PlantDetail() {
   const { id } = useParams()
@@ -60,10 +64,24 @@ export default function PlantDetail() {
     </div>
   )
   
-  if (!plant) return <div className="p-8 text-center">Растение не найдено</div>
+  if (!plant) {
+    return (
+      <>
+        <Header />
+        <PageNotFound
+          title="Растение не найдено"
+          message="Проверьте ссылку или вернитесь в каталог."
+          backTo="/catalog"
+          backLabel="К каталогу"
+        />
+        <MobileNav />
+      </>
+    )
+  }
   
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20 sm:pb-0">
+      <Header />
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <Link to="/catalog" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-800 mb-4">
@@ -72,14 +90,12 @@ export default function PlantDetail() {
           </Link>
           
           <div className="flex items-start gap-6">
-            {plant.image_url ? (
-              <img src={plant.image_url} alt={plant.name} className="w-32 h-32 rounded-xl object-cover" />
-            ) : (
-              <div className="w-32 h-32 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex flex-col items-center justify-center gap-2">
-                <Sprout className="w-10 h-10 text-green-400" />
-                <span className="text-xs text-gray-500">Нет фото</span>
-              </div>
-            )}
+            <PlantImage
+              src={plant.image_url}
+              alt={plant.name}
+              className="w-32 h-32 rounded-xl object-cover"
+              fallbackClassName="w-32 h-32 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex flex-col items-center justify-center gap-2"
+            />
             <div>
               <h1 className="text-3xl font-bold text-gray-800">{plant.name}</h1>
               <p className="text-gray-500 flex items-center gap-1 mt-1">
@@ -234,6 +250,7 @@ export default function PlantDetail() {
           </div>
         )}
       </main>
+      <MobileNav />
     </div>
   )
 }

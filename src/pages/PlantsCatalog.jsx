@@ -7,8 +7,12 @@ import {
   Search, Sprout, Droplets, Calendar, X, Plus
 } from 'lucide-react'
 import Header from '../components/Header'
-import PlantImporter from '../components/PlantImporter'
+import PlantImage from '../components/PlantImage'
+import AddUserPlant from '../components/AddUserPlant'
 import MobileNav from '../components/MobileNav'
+import { toast } from '../store/toastStore'
+import { confirm } from '../store/confirmStore'
+import { uploadPlantImage } from '../services/plantImageStorage'
 
 export default function PlantsCatalog() {
   const { isAdmin } = useAuthStore()
@@ -19,6 +23,10 @@ export default function PlantsCatalog() {
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [activeTab, setActiveTab] = useState('catalog')
+  const [plantPhotoFile, setPlantPhotoFile] = useState(null)
+  const [plantPhotoPreview, setPlantPhotoPreview] = useState(null)
+  const [uploadingPlant, setUploadingPlant] = useState(false)
+  const [loadError, setLoadError] = useState('')
   
   const [newPlant, setNewPlant] = useState({
     name: '', category_id: '', watering_freq_days: 3,
@@ -27,20 +35,25 @@ export default function PlantsCatalog() {
   })
   
   const loadData = useCallback(async () => {
-    const [plantsData, categoriesData] = await Promise.all([
-      useReferenceStore.getState().getPlants(),
-      useReferenceStore.getState().getCategories(),
-    ])
+    setLoadError('')
+    try {
+      const [plantsData, categoriesData] = await Promise.all([
+        useReferenceStore.getState().getPlants(),
+        useReferenceStore.getState().getCategories(),
+      ])
 
-    setCategories(categoriesData || [])
-    if (plantsData?.length) {
+      setCategories(categoriesData || [])
       const categoryById = new Map((categoriesData || []).map((c) => [c.id, c]))
       setPlants(
-        plantsData.map((plant) => ({
+        (plantsData || []).map((plant) => ({
           ...plant,
           category: categoryById.get(plant.category_id) || null,
         }))
       )
+    } catch (err) {
+      setLoadError(err.message || 'Не удалось загрузить каталог')
+      setPlants([])
+      setCategories([])
     }
     setLoading(false)
   }, [])
@@ -50,43 +63,77 @@ export default function PlantsCatalog() {
     loadData()
   }, [loadData])
   
-  async function addPlant() {
-    if (!newPlant.name || !newPlant.category_id) {
-      alert('Заполните название и категорию')
-      return
-    }
-    
-    const { data, error } = await supabase
-      .from('plants')
-      .insert(newPlant)
-      .select(`*, category:category_id(id, name, icon)`)
-      .single()
-    
-    if (error) {
-      alert(`Не удалось добавить растение: ${error.message}`)
-      return
-    }
-    if (!data) return
+  function handlePlantPhotoSelect(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPlantPhotoFile(file)
+    const reader = new FileReader()
+    reader.onload = (ev) => setPlantPhotoPreview(ev.target.result)
+    reader.readAsDataURL(file)
+  }
 
-    setPlants([...plants, data])
-    useReferenceStore.getState().invalidateReferences()
-    setShowAddModal(false)
+  function resetAddPlantForm() {
     setNewPlant({
       name: '', category_id: '', watering_freq_days: 3,
       maturation_days: 60, scientific_facts: '', description: '',
       planting_method: 'direct', days_to_transplant: 0, days_to_harvest: 60
     })
+    setPlantPhotoFile(null)
+    setPlantPhotoPreview(null)
+  }
+
+  async function addPlant() {
+    if (!newPlant.name || !newPlant.category_id) {
+      toast.error('Заполните название и категорию')
+      return
+    }
+
+    setUploadingPlant(true)
+    try {
+      let imageUrl = null
+      if (plantPhotoFile) {
+        imageUrl = await uploadPlantImage(plantPhotoFile, { plantName: newPlant.name })
+      }
+
+      const { data, error } = await supabase
+        .from('plants')
+        .insert({ ...newPlant, image_url: imageUrl })
+        .select(`*, category:category_id(id, name, icon)`)
+        .single()
+
+      if (error) {
+        toast.error(`Не удалось добавить растение: ${error.message}`)
+        return
+      }
+      if (!data) return
+
+      toast.success('Растение добавлено')
+      setPlants([...plants, data])
+      useReferenceStore.getState().invalidateReferences()
+      setShowAddModal(false)
+      resetAddPlantForm()
+    } catch (err) {
+      toast.error(err.message || 'Не удалось загрузить фото')
+    } finally {
+      setUploadingPlant(false)
+    }
   }
   
   async function deletePlant(id) {
-    if (!confirm('Удалить растение? Это действие нельзя отменить.')) return
+    const ok = await confirm('Удалить растение? Это действие нельзя отменить.', {
+      title: 'Удалить растение',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
     const { error } = await supabase.from('plants').delete().eq('id', id)
     if (error) {
-      alert(`Не удалось удалить растение: ${error.message}`)
+      toast.error(`Не удалось удалить: ${error.message}`)
       return
     }
     setPlants(plants.filter(p => p.id !== id))
     useReferenceStore.getState().invalidateReferences()
+    toast.success('Растение удалено')
   }
   
   const filteredPlants = plants.filter(plant => {
@@ -107,6 +154,14 @@ export default function PlantsCatalog() {
       <Header />
       
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {loadError && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span>{loadError}</span>
+            <button type="button" onClick={() => { setLoading(true); loadData() }} className="px-4 py-2 bg-white border border-red-200 rounded-lg hover:bg-red-50 font-medium shrink-0">
+              Повторить
+            </button>
+          </div>
+        )}
         {/* Заголовок и вкладки */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
           <div>
@@ -125,11 +180,11 @@ export default function PlantsCatalog() {
                 }`}>
                 📚 Каталог
               </button>
-              <button onClick={() => setActiveTab('import')}
+              <button onClick={() => setActiveTab('add')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === 'import' ? 'bg-white shadow text-green-700' : 'text-gray-500'
+                  activeTab === 'add' ? 'bg-white shadow text-green-700' : 'text-gray-500'
                 }`}>
-                🌐 Импорт
+                ✏️ Своё растение
               </button>
             </div>
             {isAdmin && activeTab === 'catalog' && (
@@ -174,14 +229,12 @@ export default function PlantsCatalog() {
               {filteredPlants.map(plant => (
                 <div key={plant.id} className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all group">
                   <div className="h-44 bg-gray-100 overflow-hidden relative">
-                    {plant.image_url ? (
-                      <img src={plant.image_url} alt={plant.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 gap-2">
-                        <Sprout className="w-10 h-10 text-gray-400" />
-                        <span className="text-xs text-gray-400">Нет фото</span>
-                      </div>
-                    )}
+                    <PlantImage
+                      src={plant.image_url}
+                      alt={plant.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      fallbackClassName="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 gap-2"
+                    />
                     
                     {/* Бейджи */}
                     <div className="absolute top-2 left-2 flex flex-col gap-1">
@@ -240,15 +293,22 @@ export default function PlantsCatalog() {
               ))}
             </div>
             
-            {filteredPlants.length === 0 && (
+            {plants.length === 0 && !loadError && (
               <div className="text-center py-16">
                 <Sprout className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">Ничего не найдено</p>
+                <h3 className="text-lg font-medium text-gray-700 mb-2">Каталог пуст</h3>
+                <p className="text-gray-500 text-sm">Растения появятся после добавления администратором</p>
+              </div>
+            )}
+            {plants.length > 0 && filteredPlants.length === 0 && (
+              <div className="text-center py-16">
+                <Sprout className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">По вашему запросу ничего не найдено</p>
               </div>
             )}
           </>
         ) : (
-          <PlantImporter onImport={(plant) => setPlants([plant, ...plants])} />
+          <AddUserPlant />
         )}
       </main>
       
@@ -312,6 +372,24 @@ export default function PlantsCatalog() {
               </div>
               
               <div>
+                <label className="block text-sm font-medium mb-1">Фото</label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={handlePlantPhotoSelect}
+                  className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-green-50 file:text-green-700 file:font-medium hover:file:bg-green-100"
+                />
+                {(plantPhotoPreview) && (
+                  <PlantImage
+                    src={plantPhotoPreview}
+                    alt="Превью"
+                    className="mt-2 w-full h-32 object-cover rounded-lg"
+                    fallbackClassName="mt-2 w-full h-32 rounded-lg bg-green-50 flex items-center justify-center"
+                  />
+                )}
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium mb-1">Описание</label>
                 <textarea value={newPlant.description} onChange={e => setNewPlant({...newPlant, description: e.target.value})}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" placeholder="Описание растения..." />
@@ -325,8 +403,10 @@ export default function PlantsCatalog() {
             </div>
             
             <div className="flex gap-3 mt-6">
-              <button onClick={addPlant} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium">Добавить</button>
-              <button onClick={() => setShowAddModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl hover:bg-gray-200">Отмена</button>
+              <button onClick={addPlant} disabled={uploadingPlant} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium disabled:opacity-60">
+                {uploadingPlant ? 'Загрузка…' : 'Добавить'}
+              </button>
+              <button onClick={() => { setShowAddModal(false); resetAddPlantForm(); }} className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl hover:bg-gray-200">Отмена</button>
             </div>
           </div>
         </div>

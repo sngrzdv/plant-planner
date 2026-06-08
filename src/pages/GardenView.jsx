@@ -3,9 +3,12 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search } from 'lucide-react'
 import Header from '../components/Header'
+import PlantImage from '../components/PlantImage'
 import { useAuthStore } from '../store/authStore'
 import { reminderService } from '../services/reminderService'
 import { useReferenceStore } from '../store/referenceStore'
+import { toast } from '../store/toastStore'
+import PageNotFound from '../components/PageNotFound'
 
 const ZONE_ICONS = {
   house: '🏠', rect: '🥬', flowerbed: '🌸', tree: '🌳', greenhouse: '🏡', bush: '🪴', path: '🪨', pond: '💧',
@@ -33,12 +36,16 @@ export default function GardenView() {
   const [planting, setPlanting] = useState(false)
 
   const loadData = useCallback(async () => {
-    const [{ data: l }, { data: z }] = await Promise.all([
+    const [{ data: l, error: layoutError }, { data: z }] = await Promise.all([
       supabase.from('layouts').select('*').eq('id', id).single(),
       supabase.from('beds').select('*, plant:plant_id(id, name)').eq('layout_id', id),
     ])
 
-    if (l) setLayout(l)
+    if (layoutError || !l) {
+      setLayout(null)
+    } else {
+      setLayout(l)
+    }
     if (z) setZones(z)
     
     setLoading(false)
@@ -139,8 +146,9 @@ export default function GardenView() {
       setSelectedZone({ ...selectedZone, plant_id: plantId })
       clickZone(selectedZone)
       setShowPlantModal(false)
+      toast.success('Растение посажено')
     } catch (error) {
-      alert(`Не удалось посадить растение: ${error.message}`)
+      toast.error(`Не удалось посадить: ${error.message}`)
     } finally {
       setPlanting(false)
     }
@@ -150,11 +158,24 @@ export default function GardenView() {
     p.name.toLowerCase().includes(searchPlant.toLowerCase())
   )
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
-    </div>
-  )
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
+
+  if (!layout) {
+    return (
+      <PageNotFound
+        title="Участок не найден"
+        message="Возможно, он был удалён или у вас нет доступа."
+        backTo="/gardens"
+        backLabel="К участкам"
+      />
+    )
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
@@ -305,11 +326,7 @@ export default function GardenView() {
                 <div className="space-y-2">
                   {plants.map(p => (
                     <div key={p.id} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl">
-                      {p.plants?.image_url ? (
-                        <img src={p.plants.image_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                      ) : (
-                        <span className="text-2xl">🌱</span>
-                      )}
+                      <PlantImage src={p.plants?.image_url} alt={p.plants?.name || ''} className="w-10 h-10 rounded-lg object-cover" fallbackIcon="🌱" fallbackClassName="w-10 h-10 rounded-lg flex items-center justify-center text-2xl" />
                       <div>
                         <p className="font-medium text-sm">{p.plants?.name}</p>
                         <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
@@ -359,11 +376,7 @@ export default function GardenView() {
                   disabled={planting}
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-green-50 transition-colors text-left disabled:opacity-50 border border-transparent hover:border-green-200"
                 >
-                  {plant.image_url ? (
-                    <img src={plant.image_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                  ) : (
-                    <span className="text-2xl">🌱</span>
-                  )}
+                  <PlantImage src={plant.image_url} alt={plant.name} className="w-10 h-10 rounded-lg object-cover" fallbackIcon="🌱" fallbackClassName="w-10 h-10 rounded-lg flex items-center justify-center text-2xl" />
                   <div className="flex-1">
                     <p className="font-medium text-sm">{plant.name}</p>
                     <p className="text-xs text-gray-500">

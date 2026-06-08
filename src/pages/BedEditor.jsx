@@ -4,8 +4,12 @@ import { supabase } from '../lib/supabase'
 import { ArrowLeft, Save, Plus, Trash2, Minus, X, Search, Ruler, Grid3X3, Move, Droplets, Calendar, Sprout } from 'lucide-react'
 import { Rnd } from 'react-rnd'
 import Header from '../components/Header'
+import PlantImage from '../components/PlantImage'
 import { useAuthStore } from '../store/authStore'
 import { reminderService } from '../services/reminderService'
+import { toast } from '../store/toastStore'
+import { confirm } from '../store/confirmStore'
+import PageNotFound from '../components/PageNotFound'
 
 const THEME = {
   soil: { base: '#a0826b', border: '#6B5443', highlight: '#8B7355' },
@@ -65,17 +69,20 @@ export default function BedEditor() {
   const [showPlantInfo, setShowPlantInfo] = useState(false)
 
   const loadData = useCallback(async () => {
-    const { data: b } = await supabase.from('beds').select('*').eq('id', id).single()
-    if (b) {
-      setBed(b)
-      if (!b.soil_width || b.soil_width < 100) {
-        setShowSizeSetup(true)
-        setGardenWidth(b.soil_width || 500)
-        setGardenHeight(b.soil_height || 400)
-      } else {
-        setGardenWidth(b.soil_width)
-        setGardenHeight(b.soil_height)
-      }
+    const { data: b, error: bedError } = await supabase.from('beds').select('*').eq('id', id).single()
+    if (bedError || !b) {
+      setBed(null)
+      setLoading(false)
+      return
+    }
+    setBed(b)
+    if (!b.soil_width || b.soil_width < 100) {
+      setShowSizeSetup(true)
+      setGardenWidth(b.soil_width || 500)
+      setGardenHeight(b.soil_height || 400)
+    } else {
+      setGardenWidth(b.soil_width)
+      setGardenHeight(b.soil_height)
     }
 
     const { data: elements } = await supabase
@@ -117,7 +124,7 @@ export default function BedEditor() {
   async function applyGardenSize(width, height) {
     const { error } = await supabase.from('beds').update({ soil_width: width, soil_height: height }).eq('id', id)
     if (error) {
-      alert(`Не удалось сохранить размер поля: ${error.message}`)
+      toast.error(`Не удалось сохранить размер: ${error.message}`)
       return
     }
     setGardenWidth(width)
@@ -145,7 +152,7 @@ export default function BedEditor() {
       if (companions && companions.length > 0) {
         const badMatch = companions.find(c => c.relationship === 'bad' && (c.plant_id === neighbor.plant_id || c.companion_id === neighbor.plant_id))
         if (badMatch) {
-          alert(`⚠️ ${newPlant.name} и ${neighbor.plant?.name || 'сосед'} — плохие соседи!\n\n${badMatch.description || 'Не рекомендуется сажать рядом.'}`)
+          toast.info(`${newPlant.name} и ${neighbor.plant?.name || 'сосед'} — плохие соседи. ${badMatch.description || 'Не сажайте рядом.'}`)
           return false
         }
       }
@@ -162,7 +169,10 @@ export default function BedEditor() {
       x += CELL_SIZE
       if (x + w > gardenWidth - 20) { x = 20; y += CELL_SIZE }
     }
-    if (!placed) { alert('🪴 Недостаточно места!'); return }
+    if (!placed) {
+      toast.error('Недостаточно места на грядке')
+      return
+    }
 
     const currentYear = new Date().getFullYear()
     const { data, error } = await supabase.from('bed_elements').insert({
@@ -170,7 +180,7 @@ export default function BedEditor() {
       pos_x: x, pos_y: y, width: w, height: h, color: '#6B4226', planted_year: currentYear
     }).select().single()
     if (error) {
-      alert(`Не удалось добавить грядку: ${error.message}`)
+      toast.error(`Не удалось добавить грядку: ${error.message}`)
       return
     }
     if (data) setBeds([...beds, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
@@ -179,7 +189,7 @@ export default function BedEditor() {
   async function deleteSubBed(bedId) {
     const { error } = await supabase.from('bed_elements').delete().eq('id', bedId)
     if (error) {
-      alert(`Не удалось удалить грядку: ${error.message}`)
+      toast.error(`Не удалось удалить грядку: ${error.message}`)
       return
     }
     setBeds(beds.filter(r => r.id !== bedId))
@@ -215,7 +225,7 @@ export default function BedEditor() {
 
     const { error } = await supabase.from('bed_elements').update({ pos_x: Math.round(x), pos_y: Math.round(y), width: snappedW, height: snappedH }).eq('id', bedId)
     if (error) {
-      alert(`Не удалось сохранить грядку: ${error.message}`)
+      toast.error(`Не удалось сохранить грядку: ${error.message}`)
       setBeds(beds)
       setBedPlants(bedPlants)
       return
@@ -224,7 +234,7 @@ export default function BedEditor() {
       if (plant._x !== bedPlants.find(bp => bp.id === plant.id)?._x) {
         const { error: plantError } = await supabase.from('bed_elements').update({ pos_x: Math.round(plant._x), pos_y: Math.round(plant._y) }).eq('id', plant.id)
         if (plantError) {
-          alert(`Не удалось сохранить положение растения: ${plantError.message}`)
+          toast.error(`Не удалось сохранить положение: ${plantError.message}`)
           break
         }
       }
@@ -245,7 +255,7 @@ export default function BedEditor() {
     }).select('*, plant:plant_id(id, name, image_url, watering_freq_days, maturation_days, planting_method, difficulty, scientific_facts)').single()
 
     if (error) {
-      alert(`Не удалось посадить растение: ${error.message}`)
+      toast.error(`Не удалось посадить: ${error.message}`)
     } else if (data) {
       setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
@@ -267,7 +277,10 @@ export default function BedEditor() {
     if (!plantId) return
     const plant = allPlants.find(p => p.id === plantId)
     if (!plant) return
-    if (bedPlants.find(p => Math.abs(p._x - cellX) < 20 && Math.abs(p._y - cellY) < 20)) { alert('Эта клетка уже занята!'); return }
+    if (bedPlants.find(p => Math.abs(p._x - cellX) < 20 && Math.abs(p._y - cellY) < 20)) {
+      toast.error('Эта клетка уже занята')
+      return
+    }
     const isCompatible = await checkCompatibility(plant, cellX, cellY)
     if (!isCompatible) return
     setSelectedCell({ bedId: subBedId, x: cellX, y: cellY })
@@ -284,7 +297,7 @@ export default function BedEditor() {
     }).select('*, plant:plant_id(id, name, image_url, watering_freq_days, maturation_days, planting_method, difficulty, scientific_facts)').single()
 
     if (error) {
-      alert(`Не удалось посадить растение: ${error.message}`)
+      toast.error(`Не удалось посадить: ${error.message}`)
     } else if (data) {
       setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
@@ -334,6 +347,17 @@ export default function BedEditor() {
       <div className="text-center"><div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><p className="text-gray-600 text-sm">Загружаем ваш огород...</p></div>
     </div>
   )
+
+  if (!bed) {
+    return (
+      <PageNotFound
+        title="Грядка не найдена"
+        message="Возможно, она была удалена или ссылка устарела."
+        backTo="/gardens"
+        backLabel="К участкам"
+      />
+    )
+  }
 
   if (showSizeSetup) {
     return (
@@ -411,7 +435,10 @@ export default function BedEditor() {
               ))}
             </div>
             {selectedSubBed && (
-              <button onClick={() => { if (confirm('Удалить эту грядку?')) deleteSubBed(selectedSubBed.id) }} className="w-full mt-2 flex items-center justify-center gap-1 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"><Trash2 className="w-3 h-3" /> Удалить грядку</button>
+              <button onClick={async () => {
+                const ok = await confirm('Удалить эту грядку?', { title: 'Удалить грядку', confirmLabel: 'Удалить', destructive: true })
+                if (ok) deleteSubBed(selectedSubBed.id)
+              }} className="w-full mt-2 flex items-center justify-center gap-1 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"><Trash2 className="w-3 h-3" /> Удалить грядку</button>
             )}
           </div>
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -426,7 +453,7 @@ export default function BedEditor() {
                   className="flex items-center gap-2 p-2 rounded-lg hover:bg-green-50 cursor-grab active:cursor-grabbing transition-colors border border-transparent hover:border-green-200"
                   onClick={() => { if (selectedCell) plantInCell(plant) }}>
                   <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {plant.image_url ? <img src={plant.image_url} className="w-7 h-7 rounded object-cover" /> : <span className="text-sm">{plant.category?.icon || '🌱'}</span>}
+                    <PlantImage src={plant.image_url} alt={plant.name} className="w-7 h-7 rounded object-cover" fallbackIcon={plant.category?.icon || '🌱'} fallbackClassName="w-7 h-7 rounded flex items-center justify-center text-sm" />
                   </div>
                   <div className="flex-1 min-w-0"><p className="text-[11px] font-medium truncate">{plant.name}</p><p className="text-[9px] text-gray-400">💧{plant.watering_freq_days}д 📅{plant.maturation_days}д</p></div>
                 </div>
@@ -470,7 +497,11 @@ export default function BedEditor() {
                         boxShadow: selectedSubBed?.id === subBed.id ? '0 0 0 3px rgba(168,255,128,0.3), 0 12px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.15)' : '0 6px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.1)'
                       }}>
                       {selectedSubBed?.id === subBed.id && (
-                        <button onClick={(e) => { e.stopPropagation(); if (confirm('Удалить эту грядку?')) deleteSubBed(subBed.id) }}
+                        <button onClick={async (e) => {
+                          e.stopPropagation()
+                          const ok = await confirm('Удалить эту грядку?', { title: 'Удалить грядку', confirmLabel: 'Удалить', destructive: true })
+                          if (ok) deleteSubBed(subBed.id)
+                        }}
                           className="absolute -top-2.5 -right-2.5 w-7 h-7 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95 z-10"><X className="w-4 h-4" /></button>
                       )}
                       <div className="grid w-full h-full" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)` }}>
@@ -486,8 +517,13 @@ export default function BedEditor() {
                               title={plantInCell ? `🌱 ${plantInCell.plant?.name}` : 'Кликните или перетащите растение'}>
                               {plantInCell ? (
                                 <div className="relative">
-                                  {plantInCell.plant?.image_url ? <img src={plantInCell.plant.image_url} className="w-8 h-8 rounded-lg object-cover border border-white/30 shadow-sm" alt="" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} /> : null}
-                                  <span className={`${plantInCell.plant?.image_url ? 'hidden' : 'flex'} items-center justify-center text-xl drop-shadow-sm`}>🌱</span>
+                                  <PlantImage
+                                    src={plantInCell.plant?.image_url}
+                                    alt={plantInCell.plant?.name}
+                                    className="w-8 h-8 rounded-lg object-cover border border-white/30 shadow-sm"
+                                    fallbackIcon="🌱"
+                                    fallbackClassName="w-8 h-8 rounded-lg flex items-center justify-center text-xl drop-shadow-sm"
+                                  />
                                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-gray-900/95 text-white text-[10px] rounded-lg opacity-0 group-hover/cell:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 shadow-lg border border-gray-700/50">
                                     {plantInCell.plant?.name}{plantInCell.planted_year && <span className="text-gray-400 ml-1">{plantInCell.planted_year}</span>}
                                     <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900/95"></div>
@@ -524,14 +560,13 @@ export default function BedEditor() {
 
               {/* Фото */}
               <div className="w-full h-44 rounded-2xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center mb-4 overflow-hidden shadow-inner">
-                {selectedPlantInfo.plant?.image_url ? (
-                  <img src={selectedPlantInfo.plant.image_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="text-center">
-                    <span className="text-5xl block mb-2">{allPlants.find(p => p.id === selectedPlantInfo.plant_id)?.category?.icon || '🌱'}</span>
-                    <span className="text-sm text-gray-400">Нет фото</span>
-                  </div>
-                )}
+                <PlantImage
+                  src={selectedPlantInfo.plant?.image_url}
+                  alt={selectedPlantInfo.plant?.name}
+                  className="w-full h-full object-cover"
+                  fallbackIcon={allPlants.find(p => p.id === selectedPlantInfo.plant_id)?.category?.icon || '🌱'}
+                  fallbackClassName="w-full h-full flex flex-col items-center justify-center text-center"
+                />
               </div>
 
               {/* Название */}
@@ -618,16 +653,21 @@ export default function BedEditor() {
                   📖 Подробнее о растении
                 </Link>
                 <button onClick={async () => {
-                  if (confirm(`Удалить ${selectedPlantInfo.plant?.name || 'растение'}?`)) {
-                    const { error } = await supabase.from('bed_elements').delete().eq('id', selectedPlantInfo.id)
-                    if (error) {
-                      alert(`Не удалось удалить растение: ${error.message}`)
-                      return
-                    }
-                    setBedPlants(bedPlants.filter(p => p.id !== selectedPlantInfo.id))
-                    setShowPlantInfo(false)
-                    setSelectedPlantInfo(null)
+                  const ok = await confirm(`Удалить ${selectedPlantInfo.plant?.name || 'растение'}?`, {
+                    title: 'Удалить растение',
+                    confirmLabel: 'Удалить',
+                    destructive: true,
+                  })
+                  if (!ok) return
+                  const { error } = await supabase.from('bed_elements').delete().eq('id', selectedPlantInfo.id)
+                  if (error) {
+                    toast.error(`Не удалось удалить: ${error.message}`)
+                    return
                   }
+                  setBedPlants(bedPlants.filter(p => p.id !== selectedPlantInfo.id))
+                  setShowPlantInfo(false)
+                  setSelectedPlantInfo(null)
+                  toast.success('Растение удалено с грядки')
                 }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors">
                   <Trash2 className="w-4 h-4" /> Удалить растение
                 </button>
@@ -648,8 +688,7 @@ export default function BedEditor() {
               {filteredPlants.length === 0 ? <div className="text-center py-10 text-gray-400"><span className="text-4xl mb-3 block">🔍</span><p className="font-medium">Ничего не найдено</p></div> : filteredPlants.map(plant => (
                 <button key={plant.id} onClick={() => plantInCell(plant)} className="w-full flex items-center gap-3 p-3.5 rounded-2xl hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50/60 hover:border-green-200 border border-transparent text-left transition-all duration-200 group">
                   <div className="w-13 h-13 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-green-200/60 group-hover:scale-105 transition-transform shadow-sm">
-                    {plant.image_url ? <img src={plant.image_url} className="w-full h-full object-cover" alt="" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} /> : null}
-                    <span className={`${plant.image_url ? 'hidden' : 'flex'} items-center justify-center text-2xl`}>{plant.category?.icon || '🌿'}</span>
+                    <PlantImage src={plant.image_url} alt={plant.name} className="w-full h-full object-cover" fallbackIcon={plant.category?.icon || '🌿'} fallbackClassName="w-full h-full flex items-center justify-center text-2xl" />
                   </div>
                   <div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-800 truncate">{plant.name}</p>
                     <div className="flex items-center gap-3 mt-1"><span className="text-xs text-gray-500 flex items-center gap-1">💧 {plant.watering_freq_days} дн.</span><span className="text-xs text-gray-500 flex items-center gap-1">📅 {plant.maturation_days} дн.</span>{plant.category?.name && <span className="text-xs text-gray-400">• {plant.category.name}</span>}</div>

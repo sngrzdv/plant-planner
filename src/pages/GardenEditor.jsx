@@ -4,7 +4,11 @@ import { supabase } from '../lib/supabase'
 import { ArrowLeft, Home, Square, Flower2, TreePine, Warehouse, Trash2, Plus, Minus, Eye } from 'lucide-react'
 import { Rnd } from 'react-rnd'
 import Header from '../components/Header'
+import PlantImage from '../components/PlantImage'
 import { useReferenceStore } from '../store/referenceStore'
+import { toast } from '../store/toastStore'
+import { confirm } from '../store/confirmStore'
+import PageNotFound from '../components/PageNotFound'
 
 const ZONE_TYPES = [
   { type: 'house', name: 'Здание', icon: '🏠', color: '#D4A574', defaultW: 150, defaultH: 120 },
@@ -33,12 +37,17 @@ export default function GardenEditor() {
   const [allPlants, setAllPlants] = useState([])
 
   const loadData = useCallback(async () => {
-    const [{ data: layoutData }, { data: bedsData }] = await Promise.all([
+    const [{ data: layoutData, error: layoutError }, { data: bedsData }] = await Promise.all([
       supabase.from('layouts').select('*').eq('id', id).single(),
       supabase.from('beds').select('*').eq('layout_id', id),
     ])
 
-    if (layoutData) setLayout(layoutData)
+    if (layoutError || !layoutData) {
+      setLayout(null)
+      setLoading(false)
+      return
+    }
+    setLayout(layoutData)
     if (bedsData) {
       setZones(bedsData.map(b => ({
         ...b,
@@ -73,7 +82,7 @@ export default function GardenEditor() {
     }).select().single()
 
     if (error) {
-      alert(`Не удалось добавить зону: ${error.message}`)
+      toast.error(`Не удалось добавить зону: ${error.message}`)
       return
     }
     if (data) setZones([...zones, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
@@ -88,7 +97,7 @@ export default function GardenEditor() {
     }).eq('id', zoneId)
     if (error) {
       setZones(previousZones)
-      alert(`Не удалось сохранить зону: ${error.message}`)
+      toast.error(`Не удалось сохранить зону: ${error.message}`)
     }
   }
 
@@ -105,7 +114,7 @@ export default function GardenEditor() {
     setSelectedZone(prev => prev ? { ...prev, name: newName } : null)
     const { error } = await supabase.from('beds').update({ name: newName }).eq('id', zoneId)
     if (error) {
-      alert(`Не удалось сохранить название: ${error.message}`)
+      toast.error(`Не удалось сохранить название: ${error.message}`)
       loadData()
       return
     }
@@ -121,7 +130,7 @@ export default function GardenEditor() {
     setZones(zones.map(z => z.id === zoneId ? { ...z, _w: newW, _h: newH } : z))
     const { error } = await supabase.from('beds').update({ width: Math.round(newW), height: Math.round(newH) }).eq('id', zoneId)
     if (error) {
-      alert(`Не удалось повернуть зону: ${error.message}`)
+      toast.error(`Не удалось повернуть зону: ${error.message}`)
       loadData()
     }
   }
@@ -129,9 +138,10 @@ export default function GardenEditor() {
   async function deleteZone(zoneId) {
     const { error } = await supabase.from('beds').delete().eq('id', zoneId)
     if (error) {
-      alert(`Не удалось удалить зону: ${error.message}`)
+      toast.error(`Не удалось удалить зону: ${error.message}`)
       return
     }
+    toast.success('Зона удалена')
     setZones(zones.filter(z => z.id !== zoneId))
     setSelectedZone(null)
     setEditingName(false)
@@ -162,6 +172,17 @@ export default function GardenEditor() {
       <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
     </div>
   )
+
+  if (!layout) {
+    return (
+      <PageNotFound
+        title="Участок не найден"
+        message="Возможно, он был удалён или у вас нет доступа."
+        backTo="/gardens"
+        backLabel="К участкам"
+      />
+    )
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-200 select-none overflow-hidden">
@@ -310,10 +331,13 @@ export default function GardenEditor() {
                 </button>
 
                 <button
-                  onClick={() => {
-                    if (confirm(`Удалить зону «${selectedZone.name || 'Без названия'}»?`)) {
-                      deleteZone(selectedZone.id)
-                    }
+                  onClick={async () => {
+                    const ok = await confirm(`Удалить зону «${selectedZone.name || 'Без названия'}»?`, {
+                      title: 'Удалить зону',
+                      confirmLabel: 'Удалить',
+                      destructive: true,
+                    })
+                    if (ok) deleteZone(selectedZone.id)
                   }}
                   className="w-full flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors"
                 >
@@ -425,14 +449,14 @@ export default function GardenEditor() {
               <button key={plant.id} onClick={async () => {
                 const { error } = await supabase.from('beds').update({ plant_id: plant.id }).eq('id', selectedZone.id)
                 if (error) {
-                  alert(`Не удалось выбрать растение: ${error.message}`)
+                  toast.error(`Не удалось выбрать растение: ${error.message}`)
                   return
                 }
                 setZones(zones.map(z => z.id === selectedZone.id ? { ...z, plant_id: plant.id } : z))
                 setSelectedZone({ ...selectedZone, plant_id: plant.id })
                 setShowPlantModal(false)
               }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-green-50 text-left">
-                {plant.image_url ? <img src={plant.image_url} className="w-10 h-10 rounded-lg object-cover" /> : <span className="text-2xl">🌱</span>}
+                <PlantImage src={plant.image_url} alt={plant.name} className="w-10 h-10 rounded-lg object-cover" fallbackIcon="🌱" fallbackClassName="w-10 h-10 rounded-lg flex items-center justify-center text-2xl" />
                 <span className="font-medium text-sm">{plant.name}</span>
               </button>
             ))}

@@ -1,3 +1,5 @@
+import { toast } from '../store/toastStore'
+
 class NotificationService {
   constructor() {
     this.permission = 'default'
@@ -21,13 +23,26 @@ class NotificationService {
     return 'Notification' in window && Notification.permission === 'granted'
   }
 
-  // Отправить локальное уведомление
+  // In-app toast (всегда виден в UI)
+  success(message) {
+    toast.success(message)
+  }
+
+  error(message) {
+    toast.error(message)
+  }
+
+  info(message) {
+    toast.info(message)
+  }
+
+  // Системное уведомление браузера (если разрешено)
   send(title, options = {}) {
     if (!this.isGranted()) return
 
     const defaultOptions = {
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
+      icon: '/icon-192.png',
+      badge: '/favicon-48.png',
       tag: 'plant-planner',
       requireInteraction: false,
       ...options

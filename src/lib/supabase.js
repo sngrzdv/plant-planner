@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { getSupabaseAuthConfig } from './supabaseAuthConfig'
 
 function resolveSupabaseUrl() {
   const proxyUrl = import.meta.env.VITE_SUPABASE_PROXY_URL || '/supabase'
@@ -15,11 +16,5 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 // Создаём подключение к Supabase
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    // Обмен code только на /reset-password — меньше лишней работы на каждой странице
-    detectSessionInUrl: false,
-    flowType: 'pkce',
-    persistSession: true,
-    autoRefreshToken: true,
-  },
+  auth: getSupabaseAuthConfig(),
 })

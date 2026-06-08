@@ -8,10 +8,13 @@ import {
   X, BookOpen
 } from 'lucide-react'
 import Header from '../components/Header'
+import PlantImage from '../components/PlantImage'
 import MobileNav from '../components/MobileNav'
 import { reminderService } from '../services/reminderService'
 import { notificationService } from '../services/notificationService'
 import { useReferenceStore } from '../store/referenceStore'
+import { toast } from '../store/toastStore'
+import { confirm } from '../store/confirmStore'
 
 export default function Pots() {
   const [categories, setCategories] = useState([])
@@ -23,6 +26,7 @@ export default function Pots() {
   const [transplantedPots, setTransplantedPots] = useState([])
   const [plants, setPlants] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [showTransplantModal, setShowTransplantModal] = useState(false)
   const [selectedPot, setSelectedPot] = useState(null)
@@ -49,9 +53,10 @@ export default function Pots() {
   })
 
   const loadData = useCallback(async () => {
+    setLoadError('')
     const [
-      { data: potsData },
-      { data: transplantedData },
+      { data: potsData, error: potsError },
+      { data: transplantedData, error: transplantedError },
     ] = await Promise.all([
       supabase
         .from('pots')
@@ -67,6 +72,15 @@ export default function Pots() {
         .order('transplanted_date', { ascending: false }),
     ])
 
+    const firstError = potsError || transplantedError
+    if (firstError) {
+      setLoadError(firstError.message)
+      setPots([])
+      setTransplantedPots([])
+      setLoading(false)
+      return
+    }
+
     if (potsData) {
       setPots(potsData)
       potsData.forEach(pot => {
@@ -74,7 +88,11 @@ export default function Pots() {
         const daysToTransplant = pot.plants?.days_to_transplant || 45
         const progress = Math.min(100, Math.round((daysSince / daysToTransplant) * 100))
         if (progress >= 80) {
-          notificationService.sendSeedlingReady(pot.plants?.name || 'Растение')
+          const key = `seedling-ready-${pot.id}`
+          if (!localStorage.getItem(key)) {
+            notificationService.sendSeedlingReady(pot.plants?.name || 'Растение')
+            localStorage.setItem(key, '1')
+          }
         }
       })
     }
@@ -96,7 +114,10 @@ export default function Pots() {
   }, [loadData])
 
   async function addPot() {
-    if (!newPot.plant_id) return alert('Выберите растение')
+    if (!newPot.plant_id) {
+      toast.error('Выберите растение')
+      return
+    }
     try {
       const { data, error } = await supabase.from('pots').insert({
         user_id: user.id, plant_id: newPot.plant_id,
@@ -127,18 +148,25 @@ export default function Pots() {
 
       setShowAddModal(false)
       setNewPot({ plant_id: '', custom_name: '', sowing_date: new Date().toISOString().split('T')[0], notes: '' })
+      toast.success('Рассада добавлена')
     } catch (error) {
-      alert(`Не удалось добавить рассаду: ${error.message}`)
+      toast.error(`Не удалось добавить рассаду: ${error.message}`)
     }
   }
 
   async function deletePot(id) {
-    if (!confirm('Удалить этот горшок?')) return
+    const ok = await confirm('Удалить этот горшок?', {
+      title: 'Удалить рассаду',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
     const { error } = await supabase.from('pots').delete().eq('id', id)
     if (error) {
-      alert(`Не удалось удалить горшок: ${error.message}`)
+      toast.error(`Не удалось удалить: ${error.message}`)
       return
     }
+    toast.success('Рассада удалена')
     if (activeTab === 'growing') setPots(pots.filter(p => p.id !== id))
     else setTransplantedPots(transplantedPots.filter(p => p.id !== id))
   }
@@ -147,7 +175,7 @@ export default function Pots() {
     setSelectedPot(pot)
     const { data: gardensData, error } = await supabase.from('layouts').select('*').eq('user_id', user.id)
     if (error) {
-      alert(`Не удалось загрузить участки: ${error.message}`)
+      toast.error(`Не удалось загрузить участки: ${error.message}`)
       return
     }
     if (gardensData) setGardens(gardensData)
@@ -162,7 +190,7 @@ export default function Pots() {
       .from('beds').select('*').eq('layout_id', gardenId)
       .in('type', ['rect', 'flowerbed', 'greenhouse'])
     if (error) {
-      alert(`Не удалось загрузить грядки: ${error.message}`)
+      toast.error(`Не удалось загрузить грядки: ${error.message}`)
       return
     }
     if (bedsData) setBeds(bedsData)
@@ -173,7 +201,7 @@ export default function Pots() {
     setSelectedBed(bedId)
     const { data: bedData, error: bedError } = await supabase.from('beds').select('*').eq('id', bedId).single()
     if (bedError) {
-      alert(`Не удалось загрузить грядку: ${bedError.message}`)
+      toast.error(`Не удалось загрузить грядку: ${bedError.message}`)
       return
     }
     setBedForTransplant(bedData)
@@ -183,7 +211,7 @@ export default function Pots() {
       supabase.from('bed_elements').select('*, plant:plant_id(name)').eq('bed_id', bedId).eq('type', 'plant_spot'),
     ])
     if (rowsError || plantsError) {
-      alert(`Не удалось загрузить клетки грядки: ${(rowsError || plantsError).message}`)
+      toast.error(`Не удалось загрузить клетки: ${(rowsError || plantsError).message}`)
       return
     }
 
@@ -193,7 +221,10 @@ export default function Pots() {
   }
 
   async function transplant() {
-    if (!selectedTransplantCell) return alert('Выберите клетку на грядке')
+    if (!selectedTransplantCell) {
+      toast.error('Выберите клетку на грядке')
+      return
+    }
 
     const CELL_SIZE = 50
     let createdPlantOnBedId = null
@@ -237,7 +268,7 @@ export default function Pots() {
         await reminderService.generateForPlant(user.id, selectedPot.plants, 'transplanted', new Date().toISOString().split('T')[0])
       }
 
-      alert('✅ Растение успешно пересажено на грядку!')
+      toast.success('Растение пересажено на грядку')
       setShowTransplantModal(false)
       setSelectedPot(null)
       setSelectedBed(null)
@@ -247,7 +278,7 @@ export default function Pots() {
     } catch (error) {
       if (createdElementId) await supabase.from('bed_elements').delete().eq('id', createdElementId)
       if (createdPlantOnBedId) await supabase.from('plants_on_beds').delete().eq('id', createdPlantOnBedId)
-      alert(`Не удалось пересадить растение: ${error.message}`)
+      toast.error(`Не удалось пересадить: ${error.message}`)
     }
   }
 
@@ -316,6 +347,14 @@ export default function Pots() {
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-green-50 pb-20 sm:pb-0">
       <Header />
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+        {loadError && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span>Не удалось загрузить рассаду: {loadError}</span>
+            <button type="button" onClick={() => { setLoading(true); loadData() }} className="px-4 py-2 bg-white border border-red-200 rounded-lg hover:bg-red-50 font-medium shrink-0">
+              Повторить
+            </button>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Моя рассада</h1>
@@ -392,7 +431,7 @@ export default function Pots() {
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-start gap-3">
                           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${stage.bg}`}>
-                            {pot.plants?.image_url ? <img src={pot.plants.image_url} alt="" className="w-12 h-12 rounded-xl object-cover" /> : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center"><Sprout className="w-6 h-6 text-gray-400" /></div>}
+                            <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center" />
                           </div>
                           <div>
                             <h3 className="font-semibold text-gray-800">{pot.custom_name || pot.plants?.name}</h3>
@@ -445,7 +484,7 @@ export default function Pots() {
                 {transplantedPots.map(pot => (
                   <div key={pot.id} className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4">
                     <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-2xl">
-                      {pot.plants?.image_url ? <img src={pot.plants.image_url} className="w-12 h-12 rounded-xl object-cover" /> : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center"><Sprout className="w-6 h-6 text-gray-400" /></div>}
+                      <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center" />
                     </div>
                     <div className="flex-1">
                       <p className="font-semibold text-gray-800">{pot.custom_name || pot.plants?.name}</p>
