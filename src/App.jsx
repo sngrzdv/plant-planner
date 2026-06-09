@@ -13,6 +13,7 @@ import Header from './components/Header'
 import EmailDigestBanner from './components/EmailDigestBanner'
 import { getMoonData } from './utils/lunar'
 import { notificationService } from './services/notificationService'
+import { reminderService } from './services/reminderService'
 import { useProfilePrefs } from './hooks/useProfilePrefs'
 
 import Login from './pages/Login'
@@ -259,12 +260,11 @@ function Dashboard() {
   async function completeTask(taskId) {
     setCompletingTask(taskId)
     try {
-      const { error } = await supabase
-        .from('reminders')
-        .update({ status: 'completed', completed_at: new Date().toISOString() })
-        .eq('id', taskId)
-      
-      if (error) throw error
+      const { data: { session } } = await supabase.auth.getSession()
+      const activeUserId = session?.user?.id ?? userId
+      const result = await reminderService.completeReminder(activeUserId, taskId)
+
+      if (!result.ok) throw result.error
       
       setTodayTasks(prev => prev.filter(task => task.id !== taskId))
       setStats(prev => ({ ...prev, tasks: Math.max(0, prev.tasks - 1) }))
@@ -272,7 +272,7 @@ function Dashboard() {
       notificationService.success('Задача выполнена')
     } catch (e) {
       console.error('Error completing task:', e)
-      notificationService.error('Не удалось выполнить задачу')
+      notificationService.error(e?.message || 'Не удалось выполнить задачу')
     } finally {
       setCompletingTask(null)
     }

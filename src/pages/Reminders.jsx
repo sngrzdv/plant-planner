@@ -13,8 +13,13 @@ import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 import PlantImage from '../components/PlantImage'
 import { notificationService } from '../services/notificationService'
+import { reminderService } from '../services/reminderService'
 import { confirm } from '../store/confirmStore'
 import { useReferenceStore } from '../store/referenceStore'
+
+function isPendingReminder(reminder) {
+  return !reminder.status || reminder.status === 'pending'
+}
 
 function formatLoadError(error) {
   const message = error?.message || String(error || '')
@@ -62,6 +67,7 @@ export default function Reminders() {
   const [selectedReminder, setSelectedReminder] = useState(null)
   const [showTimeline, setShowTimeline] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [completingId, setCompletingId] = useState(null)
   
   // Календарь
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
@@ -146,16 +152,35 @@ export default function Reminders() {
   }, [searchParams, setSearchParams])
 
   async function completeReminder(id) {
-    const { error } = await supabase.from('reminders').update({
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-    }).eq('id', id)
-    if (error) {
-      notificationService.error('Не удалось выполнить задачу')
-      return
+    if (completingId) return
+
+    setCompletingId(id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id ?? user?.id
+      const result = await reminderService.completeReminder(userId, id)
+
+      if (!result.ok) {
+        console.error('Complete reminder error:', result.error)
+        notificationService.error(result.error?.message || 'Не удалось выполнить задачу')
+        return
+      }
+
+      setReminders((rows) =>
+        rows.map((row) =>
+          row.id === id
+            ? {
+                ...row,
+                status: 'completed',
+                completed_at: result.data?.completed_at || new Date().toISOString(),
+              }
+            : row
+        )
+      )
+      notificationService.success('Задача выполнена')
+    } finally {
+      setCompletingId(null)
     }
-    setReminders(rs => rs.map(r => r.id === id ? { ...r, status: 'completed' } : r))
-    notificationService.success('Задача выполнена')
   }
 
   async function skipReminder(id) {
@@ -263,16 +288,16 @@ export default function Reminders() {
   const today = new Date().toISOString().split('T')[0]
   
   const groupedByStatus = {
-    overdue: reminders.filter(r => r.status === 'pending' && r.due_date < today),
-    today: reminders.filter(r => r.status === 'pending' && r.due_date === today),
-    upcoming: reminders.filter(r => r.status === 'pending' && r.due_date > today),
+    overdue: reminders.filter(r => isPendingReminder(r) && r.due_date < today),
+    today: reminders.filter(r => isPendingReminder(r) && r.due_date === today),
+    upcoming: reminders.filter(r => isPendingReminder(r) && r.due_date > today),
     completed: reminders.filter(r => r.status === 'completed'),
   }
 
   const stats = {
     total: reminders.length,
     completed: groupedByStatus.completed.length,
-    pending: reminders.filter(r => r.status === 'pending').length,
+    pending: reminders.filter(isPendingReminder).length,
     overdue: groupedByStatus.overdue.length,
     completionRate: reminders.length > 0 ? Math.round((groupedByStatus.completed.length / reminders.length) * 100) : 0
   }
@@ -288,7 +313,7 @@ export default function Reminders() {
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
       const dayReminders = reminders.filter(r => r.due_date === dateStr)
-      const pending = dayReminders.filter(r => r.status === 'pending').length
+      const pending = dayReminders.filter(isPendingReminder).length
       const completed = dayReminders.filter(r => r.status === 'completed').length
       const date = new Date(calYear, calMonth, d)
       const moonEmoji = getMoonEmoji(date)
@@ -494,9 +519,10 @@ export default function Reminders() {
                             <div className="flex gap-2 mt-3">
                               <button 
                                 onClick={() => completeReminder(r.id)} 
-                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium"
+                                disabled={completingId === r.id}
+                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
                               >
-                                ✓ Готово
+                                {completingId === r.id ? '...' : '✓ Готово'}
                               </button>
                               <button 
                                 onClick={() => deleteReminder(r.id)} 
@@ -512,9 +538,10 @@ export default function Reminders() {
                             <div className="flex gap-2 mt-3">
                               <button 
                                 onClick={() => completeReminder(r.id)} 
-                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium"
+                                disabled={completingId === r.id}
+                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
                               >
-                                ✓ Готово
+                                {completingId === r.id ? '...' : '✓ Готово'}
                               </button>
                               <button 
                                 onClick={() => skipReminder(r.id)} 
@@ -535,11 +562,18 @@ export default function Reminders() {
                           {col.id === 'upcoming' && (
                             <div className="flex gap-2 mt-3">
                               <button 
+                                onClick={() => completeReminder(r.id)} 
+                                disabled={completingId === r.id}
+                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
+                              >
+                                {completingId === r.id ? '...' : '✓ Готово'}
+                              </button>
+                              <button 
                                 onClick={() => deleteReminder(r.id)} 
                                 disabled={deletingId === r.id}
-                                className="w-full text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
+                                className="text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
                               >
-                                {deletingId === r.id ? '...' : '✕ Удалить'}
+                                {deletingId === r.id ? '...' : '✕'}
                               </button>
                             </div>
                           )}
@@ -711,9 +745,10 @@ export default function Reminders() {
                             }`}
                           >
                             <button 
+                              type="button"
                               onClick={() => completeReminder(r.id)} 
-                              disabled={r.status === 'completed'}
-                              className="min-w-[36px] min-h-[36px] flex items-center justify-center"
+                              disabled={r.status === 'completed' || completingId === r.id}
+                              className="min-w-[36px] min-h-[36px] flex items-center justify-center disabled:opacity-50"
                             >
                               {r.status === 'completed' ? 
                                 <CheckCircle className="w-5 h-5 text-green-500" /> : 

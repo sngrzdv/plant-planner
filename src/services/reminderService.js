@@ -210,6 +210,47 @@ class ReminderService {
       status: 'pending' 
     })
   }
+
+  async completeReminder(userId, reminderId) {
+    if (!userId || !reminderId) {
+      return { ok: false, error: new Error('Не удалось определить пользователя или задачу') }
+    }
+
+    const completedAt = new Date().toISOString()
+    const columnMissing = (message) =>
+      /completed_at|does not exist|column|schema cache/i.test(message || '')
+
+    const runUpdate = (payload, selectColumns) =>
+      supabase
+        .from('reminders')
+        .update(payload)
+        .eq('id', reminderId)
+        .eq('user_id', userId)
+        .select(selectColumns)
+        .maybeSingle()
+
+    let { data, error } = await runUpdate(
+      { status: 'completed', completed_at: completedAt },
+      'id, status, completed_at',
+    )
+
+    if (error && columnMissing(error.message)) {
+      ;({ data, error } = await runUpdate({ status: 'completed' }, 'id, status'))
+      if (data) {
+        data = { ...data, completed_at: completedAt }
+      }
+    }
+
+    if (error) {
+      return { ok: false, error }
+    }
+
+    if (!data) {
+      return { ok: false, error: new Error('Задача не найдена или нет доступа') }
+    }
+
+    return { ok: true, data }
+  }
 }
 
 export const reminderService = new ReminderService()

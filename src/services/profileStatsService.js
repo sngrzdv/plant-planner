@@ -24,8 +24,9 @@ function groupJournalByYear(entries) {
 function groupCompletedByMonth(entries) {
   const byMonth = {}
   for (const row of entries) {
-    if (!row.completed_at) continue
-    const month = row.completed_at.substring(0, 7)
+    const timestamp = row.completed_at || row.due_date
+    if (!timestamp) continue
+    const month = timestamp.substring(0, 7)
     byMonth[month] = (byMonth[month] || 0) + 1
   }
   return Object.entries(byMonth)
@@ -133,10 +134,9 @@ export async function fetchProfileStats(userId) {
       .limit(100),
     supabase
       .from('reminders')
-      .select('completed_at')
+      .select('due_date')
       .eq('user_id', userId)
-      .eq('status', 'completed')
-      .not('completed_at', 'is', null),
+      .eq('status', 'completed'),
     bedIds.length
       ? supabase
           .from('bed_elements')
