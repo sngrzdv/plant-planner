@@ -111,18 +111,17 @@ export default function Reminders() {
     setLoadError(null)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const userId = session?.user?.id ?? user.id
+      const userId = user.id
 
       let data = null
       let error = null
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         const result = await fetchReminders(userId)
         data = result.data
         error = result.error
         if (!error) break
-        if (!isTransientFetchError(error) || attempt === 2) break
-        await delay(400 * (attempt + 1))
+        if (!isTransientFetchError(error) || attempt === 1) break
+        await delay(300)
       }
 
       if (error) {

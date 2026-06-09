@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { useProfilePrefs } from '../hooks/useProfilePrefs'
 import { weatherApi } from '../services/weatherApi'
 import { notificationService } from '../services/notificationService'
 import { trySendEmailDigest } from '../services/emailDigestService'
+import { fetchPendingReminders } from '../services/pendingRemindersService'
 import { getMoonData } from '../utils/lunar'
 
 function getLunarAdviceForToday() {
@@ -35,18 +35,12 @@ export default function NotificationRunner() {
 
     async function tick() {
       const lunarAdvice = getLunarAdviceForToday()
-      const [weatherData, remindersResult] = await Promise.all([
+      const [weatherData, reminders] = await Promise.all([
         weatherApi.getWeather(profile.city || null).catch(() => null),
-        supabase
-          .from('reminders')
-          .select('id, title, due_date, status, type')
-          .eq('user_id', userId)
-          .eq('status', 'pending'),
+        fetchPendingReminders(userId).catch(() => []),
       ])
 
       if (cancelled) return
-
-      const reminders = remindersResult.data || []
 
       notificationService.runDashboardNotifications({
         profile,

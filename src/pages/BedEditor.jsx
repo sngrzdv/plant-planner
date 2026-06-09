@@ -12,11 +12,13 @@ import { plantInBedGrid, removeGridPlanting } from '../services/plantingService'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
 import PageNotFound from '../components/PageNotFound'
+import { useReferenceStore } from '../store/referenceStore'
 import {
   filterPlantsForBedAndSearch,
   getFilterHintForBedType,
   getPlantBedRejectMessage,
   isPlantAllowedForBedType,
+  withPlantCategory,
 } from '../lib/plantBedFilter'
 
 const THEME = {
@@ -130,8 +132,11 @@ export default function BedEditor() {
       setBedPlants(elements.filter(e => e.type === 'plant_spot').map(p => ({ ...p, _x: p.pos_x, _y: p.pos_y, _w: p.width, _h: p.height })))
     }
 
-    const { data: ap } = await supabase.from('plants').select('*, category:category_id(id, name, icon)').order('name')
-    if (ap) setAllPlants(ap)
+    const [plantsList, categories] = await Promise.all([
+      useReferenceStore.getState().getPlants(),
+      useReferenceStore.getState().getCategories(),
+    ])
+    setAllPlants((plantsList || []).map((p) => withPlantCategory(p, categories)))
 
     setLoading(false)
   }, [id])

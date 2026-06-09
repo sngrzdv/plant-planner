@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { getMoonData } from '../utils/lunar'
+import { invalidatePendingRemindersCache } from './pendingRemindersService'
 
 class ReminderService {
   async generateForPlant(userId, plant, action, startDate = new Date()) {
@@ -249,6 +250,7 @@ class ReminderService {
       return { ok: false, error: new Error('Задача не найдена или нет доступа') }
     }
 
+    invalidatePendingRemindersCache()
     return { ok: true, data }
   }
 }

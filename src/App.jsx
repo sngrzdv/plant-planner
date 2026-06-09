@@ -14,6 +14,8 @@ import EmailDigestBanner from './components/EmailDigestBanner'
 import { getMoonData } from './utils/lunar'
 import { notificationService } from './services/notificationService'
 import { reminderService } from './services/reminderService'
+import { fetchPendingReminders, pickTodayTasks, invalidatePendingRemindersCache } from './services/pendingRemindersService'
+import { useReferenceStore } from './store/referenceStore'
 import { useProfilePrefs } from './hooks/useProfilePrefs'
 
 import Login from './pages/Login'
@@ -199,39 +201,16 @@ function Dashboard() {
       const [
         weatherData,
         statsResults,
-        tasksResult,
-        catalogCount,
-        remindersResult,
+        catalogPlants,
+        pendingReminders,
       ] = await Promise.all([
         weatherApi.getWeather(profile?.city || null).catch(() => null),
         Promise.all([
           safeSupabaseQuery(supabase.from('layouts').select('id', { count: 'exact', head: true }).eq('user_id', userId), { count: 0 }),
           safeSupabaseQuery(supabase.from('pots').select('id', { count: 'exact', head: true }).eq('status', 'growing').eq('user_id', userId), { count: 0 }),
-          safeSupabaseQuery(supabase.from('reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('user_id', userId), { count: 0 }),
         ]),
-        safeSupabaseQuery(
-          supabase
-            .from('reminders')
-            .select('id, title, type, plants:plant_id(name)')
-            .eq('status', 'pending')
-            .eq('due_date', today)
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(3),
-          { data: [] }
-        ),
-        safeSupabaseQuery(
-          supabase.from('plants').select('id', { count: 'exact', head: true }),
-          { count: 0 }
-        ),
-        safeSupabaseQuery(
-          supabase
-            .from('reminders')
-            .select('id, title, due_date, status, type')
-            .eq('user_id', userId)
-            .eq('status', 'pending'),
-          { data: [] }
-        ),
+        useReferenceStore.getState().getPlants().catch(() => []),
+        fetchPendingReminders(userId).catch(() => []),
       ])
 
       if (weatherData) {
@@ -241,15 +220,16 @@ function Dashboard() {
         setWeatherError(true)
       }
 
-      const [{ count: gardens }, { count: pots }, { count: tasks }] = statsResults
+      const [{ count: gardens }, { count: pots }] = statsResults
+      const pending = pendingReminders || []
       setStats({
         gardens: gardens || 0,
         pots: pots || 0,
-        tasks: tasks || 0,
-        catalog: catalogCount.count || 0,
+        tasks: pending.length,
+        catalog: catalogPlants?.length || 0,
       })
-      setTodayTasks(tasksResult.data || [])
-      setPendingReminders(remindersResult.data || [])
+      setTodayTasks(pickTodayTasks(pending, today))
+      setPendingReminders(pending)
       setLoadingTasks(false)
     }
 
@@ -261,13 +241,13 @@ function Dashboard() {
   async function completeTask(taskId) {
     setCompletingTask(taskId)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const activeUserId = session?.user?.id ?? userId
-      const result = await reminderService.completeReminder(activeUserId, taskId)
+      const result = await reminderService.completeReminder(userId, taskId)
 
       if (!result.ok) throw result.error
-      
+
+      invalidatePendingRemindersCache()
       setTodayTasks(prev => prev.filter(task => task.id !== taskId))
+      setPendingReminders(prev => prev.filter(task => task.id !== taskId))
       setStats(prev => ({ ...prev, tasks: Math.max(0, prev.tasks - 1) }))
       
       notificationService.success('Задача выполнена')
