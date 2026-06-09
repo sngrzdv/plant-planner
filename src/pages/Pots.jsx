@@ -354,7 +354,7 @@ export default function Pots() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-green-50 pb-20 sm:pb-0">
+    <div className="page-shell min-h-screen bg-gradient-to-br from-amber-50 via-white to-green-50 pb-20 sm:pb-0 overflow-x-hidden">
       <Header />
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
         {loadError && (
@@ -392,17 +392,17 @@ export default function Pots() {
         {activeTab === 'growing' && (
           <>
             {pots.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm p-3 mb-4 space-y-2 sm:space-y-0 sm:flex sm:items-center sm:gap-2">
-                <div className="relative flex-1">
+              <div className="bg-white rounded-2xl shadow-sm p-3 mb-4 space-y-2">
+                <div className="relative w-full">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                   <input type="text" placeholder="Поиск..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <select value={filterCategory || ''} onChange={e => setFilterCategory(e.target.value ? parseInt(e.target.value) : null)} className="px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 cursor-pointer">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select value={filterCategory || ''} onChange={e => setFilterCategory(e.target.value ? parseInt(e.target.value) : null)} className="flex-1 min-w-[140px] px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 cursor-pointer">
                     <option value="">Все категории</option>
                     {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>)}
                   </select>
-                  <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 cursor-pointer">
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="flex-1 min-w-[140px] px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 cursor-pointer">
                     <option value="date-desc">Сначала новые</option>
                     <option value="date-asc">Сначала старые</option>
                     <option value="name-asc">По алфавиту А-Я</option>

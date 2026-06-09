@@ -7,7 +7,7 @@ import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
 import { 
   LayoutGrid, Flower, Calendar, 
-  CheckCircle, BookOpen, Moon, CloudRain, Droplets, Wind, Leaf, Sprout, Zap
+  CheckCircle, BookOpen, CloudRain, Droplets, Wind, Leaf, Sprout, Zap
 } from 'lucide-react'
 import Header from './components/Header'
 import EmailDigestBanner from './components/EmailDigestBanner'
@@ -182,7 +182,7 @@ function Dashboard() {
   const [weather, setWeather] = useState(null)
   const [weatherError, setWeatherError] = useState(false)
   const [lunarAdvice] = useState(getLunarAdviceForToday)
-  const [stats, setStats] = useState({ gardens: 0, pots: 0, tasks: 0, diary: 0 })
+  const [stats, setStats] = useState({ gardens: 0, pots: 0, tasks: 0, catalog: 0 })
   const [todayTasks, setTodayTasks] = useState([])
   const [pendingReminders, setPendingReminders] = useState([])
   const [digestDismissed, setDigestDismissed] = useState(false)
@@ -200,7 +200,7 @@ function Dashboard() {
         weatherData,
         statsResults,
         tasksResult,
-        diaryCount,
+        catalogCount,
         remindersResult,
       ] = await Promise.all([
         weatherApi.getWeather(profile?.city || null).catch(() => null),
@@ -216,11 +216,12 @@ function Dashboard() {
             .eq('status', 'pending')
             .eq('due_date', today)
             .eq('user_id', userId)
-            .limit(5),
+            .order('created_at', { ascending: false })
+            .limit(3),
           { data: [] }
         ),
         safeSupabaseQuery(
-          supabase.from('user_plants').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+          supabase.from('plants').select('id', { count: 'exact', head: true }),
           { count: 0 }
         ),
         safeSupabaseQuery(
@@ -245,7 +246,7 @@ function Dashboard() {
         gardens: gardens || 0,
         pots: pots || 0,
         tasks: tasks || 0,
-        diary: diaryCount.count || 0,
+        catalog: catalogCount.count || 0,
       })
       setTodayTasks(tasksResult.data || [])
       setPendingReminders(remindersResult.data || [])
@@ -279,9 +280,9 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
+    <div className="page-shell min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 overflow-x-hidden">
       <Header />
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 pb-20 sm:pb-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 pb-20 sm:pb-6 overflow-x-hidden">
         
         {/* Приветствие */}
         <div className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-2xl p-4 sm:p-6">
@@ -343,7 +344,7 @@ function Dashboard() {
           <StatCard title="Мои участки" value={stats.gardens} icon={LayoutGrid} color="bg-blue-500" link="/gardens" />
           <StatCard title="Рассада" value={stats.pots} icon={Flower} color="bg-amber-500" link="/pots" />
           <StatCard title="Задачи" value={stats.tasks} icon={Calendar} color={stats.tasks > 0 ? 'bg-red-500' : 'bg-gray-400'} link="/reminders" />
-          <StatCard title="Мой дневник" value={stats.diary} icon={BookOpen} color="bg-green-500" link="/catalog" />
+          <StatCard title="Каталог" value={stats.catalog} icon={BookOpen} color="bg-green-500" link="/catalog" />
         </div>
 
         {/* Задачи + Быстрые действия */}
@@ -409,7 +410,6 @@ function Dashboard() {
               <QuickLink to="/pots?action=add" icon={<Flower className="w-5 h-5 text-amber-600" />} label="Посадить рассаду" />
               <QuickLink to="/reminders?action=add" icon={<Calendar className="w-5 h-5 text-red-600" />} label="Добавить задачу" />
               <QuickLink to="/catalog" icon={<BookOpen className="w-5 h-5 text-blue-600" />} label="Открыть каталог" />
-              <QuickLink to="/lunar" icon={<Moon className="w-5 h-5 text-purple-600" />} label="Лунный календарь" />
             </div>
           </div>
         </div>

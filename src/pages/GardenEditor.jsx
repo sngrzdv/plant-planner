@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Home, Square, Flower2, TreePine, Warehouse, Trash2, Plus, Minus, Eye, SquarePen, MousePointer2 } from 'lucide-react'
+import { ArrowLeft, Home, Square, Flower2, TreePine, Warehouse, Trash2, Plus, Minus, Eye, SquarePen, MousePointer2, PanelLeft, X } from 'lucide-react'
 import { Rnd } from 'react-rnd'
 import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
@@ -34,6 +34,7 @@ export default function GardenEditor() {
   const [editingName, setEditingName] = useState(false)
   const [zoneName, setZoneName] = useState('')
   const [showPlantModal, setShowPlantModal] = useState(false)
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false)
   const [allPlants, setAllPlants] = useState([])
 
   const loadData = useCallback(async () => {
@@ -162,6 +163,9 @@ export default function GardenEditor() {
 
   const stopDrag = useCallback(() => setDragging(false), [])
 
+  const pointerDown = useCallback((e) => startDrag(e.touches?.[0] || e), [startDrag])
+  const pointerMove = useCallback((e) => onDrag(e.touches?.[0] || e), [onDrag])
+
   const handleWheel = useCallback((e) => {
     const delta = e.deltaY > 0 ? -0.05 : 0.05
     setScale(s => Math.min(2, Math.max(0.2, s + delta)))
@@ -185,24 +189,25 @@ export default function GardenEditor() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-200 select-none overflow-hidden">
-      <Header />
+    <div className="page-shell h-[100dvh] flex flex-col bg-gray-200 select-none overflow-hidden">
+      <div className="hidden sm:block"><Header /></div>
       
       {/* Верхняя панель */}
-      <header className="bg-white/90 backdrop-blur-sm border-b border-gray-200 px-3 py-2 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-2">
-          <Link to="/gardens" className="p-1.5 hover:bg-gray-100 rounded-lg">
+      <header className="bg-white/90 backdrop-blur-sm border-b border-gray-200 px-3 py-2 flex items-center justify-between shrink-0 z-20 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link to="/gardens" className="p-1.5 hover:bg-gray-100 rounded-lg shrink-0">
             <ArrowLeft className="w-4 h-4" />
           </Link>
-          <div>
-            <h1 className="font-semibold text-sm">{layout?.name}</h1>
+          <div className="min-w-0">
+            <h1 className="font-semibold text-sm truncate">{layout?.name}</h1>
             <p className="text-xs text-gray-500">{zones.length} зон</p>
           </div>
-          <Link to={`/garden/${id}`} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="Просмотр">
+          <Link to={`/garden/${id}`} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 shrink-0" title="Просмотр">
             <Eye className="w-4 h-4" />
           </Link>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button type="button" onClick={() => setMobileToolsOpen(true)} className="lg:hidden p-1.5 hover:bg-gray-100 rounded-lg" aria-label="Инструменты"><PanelLeft className="w-4 h-4" /></button>
           <button onClick={() => setScale(s => Math.max(0.2, s - 0.1))} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <Minus className="w-3.5 h-3.5" />
           </button>
@@ -210,17 +215,22 @@ export default function GardenEditor() {
           <button onClick={() => setScale(s => Math.min(2, s + 0.1))} className="p-1.5 hover:bg-gray-100 rounded-lg">
             <Plus className="w-3.5 h-3.5" />
           </button>
-          <span className="text-xs text-gray-400 ml-2 hidden sm:block">
-            Зажмите и тяните — двигать холст · Колёсико — зум
-          </span>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      {mobileToolsOpen && (
+        <button type="button" className="lg:hidden fixed inset-0 bg-black/40 z-40" aria-label="Закрыть" onClick={() => setMobileToolsOpen(false)} />
+      )}
+
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Левая панель с инструментами */}
-        <aside className="w-56 bg-white/95 backdrop-blur-sm border-r border-gray-200 flex flex-col shrink-0 z-20 overflow-y-auto shadow-sm">
+        <aside className={`${mobileToolsOpen ? 'fixed inset-y-0 left-0 z-50 flex' : 'hidden'} lg:flex w-[min(100vw,16rem)] lg:w-56 bg-white/95 backdrop-blur-sm border-r border-gray-200 flex-col shrink-0 overflow-y-auto shadow-sm`}>
+          <div className="lg:hidden flex items-center justify-between p-3 border-b border-gray-100">
+            <span className="text-sm font-semibold text-gray-700">Инструменты</span>
+            <button type="button" onClick={() => setMobileToolsOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+          </div>
           {/* Заголовок */}
-          <div className="p-4 border-b border-gray-100">
+          <div className="p-4 border-b border-gray-100 hidden lg:block">
             <h3 className="text-sm font-semibold text-gray-700">Инструменты</h3>
             <p className="text-[11px] text-gray-400 mt-0.5">Добавьте зоны на участок</p>
           </div>
@@ -368,10 +378,13 @@ export default function GardenEditor() {
 
         {/* Бесконечный холст */}
         <main
-          className="flex-1 overflow-hidden relative"
-          onMouseDown={startDrag}
-          onMouseMove={onDrag}
+          className="flex-1 overflow-hidden relative min-h-0 touch-none"
+          onMouseDown={pointerDown}
+          onTouchStart={pointerDown}
+          onMouseMove={pointerMove}
+          onTouchMove={pointerMove}
           onMouseUp={stopDrag}
+          onTouchEnd={stopDrag}
           onMouseLeave={stopDrag}
           onWheel={handleWheel}
           style={{ cursor: dragging ? 'grabbing' : 'grab' }}

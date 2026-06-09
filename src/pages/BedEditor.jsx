@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Save, Plus, Trash2, Minus, X, Search, Ruler, Grid3X3, Move, Droplets, Calendar, Sprout, Info, BarChart3, ClipboardList } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Minus, X, Search, Ruler, Grid3X3, Move, Droplets, Calendar, Sprout, Info, BarChart3, ClipboardList, PanelLeft } from 'lucide-react'
 import { plantingMethodLabel } from '../lib/plantLabels'
 import { Rnd } from 'react-rnd'
 import Header from '../components/Header'
@@ -69,6 +69,7 @@ export default function BedEditor() {
   // Боковая панель информации
   const [selectedPlantInfo, setSelectedPlantInfo] = useState(null)
   const [showPlantInfo, setShowPlantInfo] = useState(false)
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     const { data: b, error: bedError } = await supabase.from('beds').select('*').eq('id', id).single()
@@ -382,7 +383,7 @@ export default function BedEditor() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
+    <div className="page-shell h-[100dvh] flex flex-col bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
       {showTutorial && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={closeTutorial}>
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
@@ -398,24 +399,33 @@ export default function BedEditor() {
         </div>
       )}
 
-      <header className="bg-white/90 backdrop-blur-md border-b border-gray-200 px-4 py-2.5 flex items-center justify-between shrink-0 z-30 shadow-sm">
-        <div className="flex items-center gap-3">
-          <Tooltip text="Вернуться к плану участка"><Link to={`/garden/${bed?.layout_id}`} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><ArrowLeft className="w-4 h-4 text-gray-600" /></Link></Tooltip>
-          <div><h1 className="font-bold text-sm text-gray-800">{bed?.name}</h1><p className="text-xs text-gray-500">{gardenWidth}×{gardenHeight} см • {beds.length} грядок • {bedPlants.length} растений</p></div>
+      <header className="bg-white/90 backdrop-blur-md border-b border-gray-200 px-3 sm:px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0 z-30 shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <Tooltip text="Вернуться к плану участка"><Link to={`/garden/${bed?.layout_id}`} className="p-2 hover:bg-gray-100 rounded-xl transition-colors shrink-0"><ArrowLeft className="w-4 h-4 text-gray-600" /></Link></Tooltip>
+          <div className="min-w-0"><h1 className="font-bold text-sm text-gray-800 truncate">{bed?.name}</h1><p className="text-xs text-gray-500 truncate">{gardenWidth}×{gardenHeight} см • {beds.length} грядок • {bedPlants.length} растений</p></div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 self-end sm:self-auto">
+          <button type="button" onClick={() => setMobileToolsOpen(true)} className="lg:hidden p-2 hover:bg-gray-100 rounded-xl" aria-label="Инструменты"><PanelLeft className="w-4 h-4 text-gray-600" /></button>
           <Tooltip text="Настройки размера поля"><button onClick={() => setShowSizeSetup(true)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><Ruler className="w-4 h-4 text-gray-500" /></button></Tooltip>
           <div className="flex items-center bg-gray-100 rounded-xl p-0.5">
             <Tooltip text="Уменьшить"><button onClick={() => setScale(s => Math.max(0.3, s - 0.1))} className="p-1.5 hover:bg-white rounded-lg transition-colors"><Minus className="w-3.5 h-3.5 text-gray-600" /></button></Tooltip>
             <span className="text-xs w-11 text-center font-medium text-gray-700">{Math.round(scale * 100)}%</span>
             <Tooltip text="Увеличить"><button onClick={() => setScale(s => Math.min(2, s + 0.1))} className="p-1.5 hover:bg-white rounded-lg transition-colors"><Plus className="w-3.5 h-3.5 text-gray-600" /></button></Tooltip>
           </div>
-          <Tooltip text="Изменения сохраняются сразу после действия"><button type="button" disabled className="flex items-center gap-1.5 bg-gray-100 text-gray-500 px-4 py-2 rounded-xl text-xs font-medium cursor-default"><Save className="w-3.5 h-3.5" /> Автосохранение</button></Tooltip>
+          <Tooltip text="Изменения сохраняются сразу после действия"><button type="button" disabled className="hidden sm:flex items-center gap-1.5 bg-gray-100 text-gray-500 px-4 py-2 rounded-xl text-xs font-medium cursor-default"><Save className="w-3.5 h-3.5" /> Автосохранение</button></Tooltip>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-56 bg-white/95 backdrop-blur-sm border-r border-gray-200 flex flex-col shrink-0 z-20 shadow-sm">
+      {mobileToolsOpen && (
+        <button type="button" className="lg:hidden fixed inset-0 bg-black/40 z-40" aria-label="Закрыть" onClick={() => setMobileToolsOpen(false)} />
+      )}
+
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        <aside className={`${mobileToolsOpen ? 'fixed inset-y-0 left-0 z-50 flex' : 'hidden'} lg:flex w-[min(100vw,16rem)] lg:w-56 bg-white/95 backdrop-blur-sm border-r border-gray-200 flex-col shrink-0 shadow-sm`}>
+          <div className="lg:hidden flex items-center justify-between p-3 border-b border-gray-100">
+            <span className="text-sm font-semibold text-gray-700">Инструменты</span>
+            <button type="button" onClick={() => setMobileToolsOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+          </div>
           <div className="p-3 border-b border-gray-100">
             <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Грядки</span>
             <div className="grid grid-cols-2 gap-1.5 mt-1.5">
@@ -537,7 +547,9 @@ export default function BedEditor() {
 
         {/* Боковая панель информации о растении */}
         {showPlantInfo && selectedPlantInfo && (
-          <div className="w-80 bg-white border-l shadow-lg shrink-0 overflow-y-auto z-20">
+          <>
+            <button type="button" className="lg:hidden fixed inset-0 bg-black/40 z-40" aria-label="Закрыть" onClick={() => { setShowPlantInfo(false); setSelectedPlantInfo(null) }} />
+            <div className="fixed inset-x-0 bottom-0 z-50 max-h-[80vh] overflow-y-auto rounded-t-2xl bg-white border-t shadow-2xl lg:static lg:z-20 lg:w-80 lg:max-h-none lg:shrink-0 lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-lg">
             <div className="p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -667,6 +679,7 @@ export default function BedEditor() {
               </div>
             </div>
           </div>
+          </>
         )}
       </div>
 

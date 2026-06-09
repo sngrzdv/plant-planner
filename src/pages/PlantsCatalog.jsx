@@ -185,7 +185,7 @@ export default function PlantsCatalog() {
   )
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
+    <div className="page-shell min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0 overflow-x-hidden">
       <Header />
       
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
@@ -212,24 +212,24 @@ export default function PlantsCatalog() {
             <p className="text-sm text-gray-500 mt-1">{plants.length} растений</p>
           </div>
           
-          <div className="flex items-center gap-2">
-            <div className="flex bg-gray-100 rounded-xl p-1">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            <div className="flex bg-gray-100 rounded-xl p-1 w-full sm:w-auto">
               <button onClick={() => setActiveTab('catalog')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   activeTab === 'catalog' ? 'bg-white shadow text-green-700' : 'text-gray-500'
                 }`}>
-                <BookOpen className="w-4 h-4" /> Каталог
+                <BookOpen className="w-4 h-4 shrink-0" /> Каталог
               </button>
               <button onClick={() => setActiveTab('add')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   activeTab === 'add' ? 'bg-white shadow text-green-700' : 'text-gray-500'
                 }`}>
-                <PenLine className="w-4 h-4" /> Своё растение
+                <PenLine className="w-4 h-4 shrink-0" /> Своё
               </button>
             </div>
             {isAdmin && activeTab === 'catalog' && (
               <button onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 text-sm font-medium transition-colors">
+                className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 text-sm font-medium transition-colors w-full sm:w-auto">
                 <Plus className="w-4 h-4" /> Добавить
               </button>
             )}
@@ -421,7 +421,7 @@ export default function PlantsCatalog() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-1">Полив (дн.)</label>
                   <input type="number" min="1" value={newPlant.watering_freq_days}

@@ -1,7 +1,21 @@
 @import "tailwindcss";
 
-/* Дополнительные стили */
+html,
+body,
+#root {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   background-color: #f9fafb;
   color: #111827;
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.page-shell {
+  min-height: 100dvh;
 }

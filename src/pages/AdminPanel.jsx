@@ -365,7 +365,7 @@ export default function AdminPanel() {
   )
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
+    <div className="page-shell min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0 overflow-x-hidden">
       <Header />
       
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
@@ -765,7 +765,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Полив + До высадки + До урожая */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Полив (дн.)</label>
                 <input type="number" value={newPlant.watering_freq_days} onChange={e => setNewPlant({...newPlant, watering_freq_days: parseInt(e.target.value) || 3})}
@@ -784,7 +784,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Расстояние посадки */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Глубина (см)</label>
                 <input type="number" step="0.1" value={newPlant.sowing_depth || 1} onChange={e => setNewPlant({...newPlant, sowing_depth: parseFloat(e.target.value) || 1})}

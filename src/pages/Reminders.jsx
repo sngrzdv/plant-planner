@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -21,10 +21,30 @@ function isPendingReminder(reminder) {
   return !reminder.status || reminder.status === 'pending'
 }
 
+function isTransientFetchError(error) {
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  return /failed to fetch|network|chunked|aborted|timeout/.test(message)
+}
+
+async function fetchReminders(userId) {
+  return supabase
+    .from('reminders')
+    .select('id, user_id, title, type, due_date, status, plant_id, source, created_at')
+    .eq('user_id', userId)
+    .order('due_date', { ascending: true })
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function formatLoadError(error) {
   const message = error?.message || String(error || '')
   if (/permission denied/i.test(message) || error?.code === '42501') {
     return 'Нет доступа к таблице reminders. Выполните SQL из файла supabase/reminders_rls.sql в Supabase Dashboard.'
+  }
+  if (/failed to fetch|network|chunked/i.test(message)) {
+    return 'Сбой сети при загрузке задач. Проверьте интернет и нажмите «Повторить».'
   }
   return message || 'Не удалось загрузить задачи'
 }
@@ -63,6 +83,8 @@ export default function Reminders() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [view, setView] = useState('board')
+  const [boardColumn, setBoardColumn] = useState('today')
+  const boardTabInitialized = useRef(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedReminder, setSelectedReminder] = useState(null)
   const [showTimeline, setShowTimeline] = useState(false)
@@ -92,11 +114,16 @@ export default function Reminders() {
       const { data: { session } } = await supabase.auth.getSession()
       const userId = session?.user?.id ?? user.id
 
-      const { data, error } = await supabase
-        .from('reminders')
-        .select('id, user_id, title, type, due_date, status, plant_id, source, created_at')
-        .eq('user_id', userId)
-        .order('due_date', { ascending: true })
+      let data = null
+      let error = null
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const result = await fetchReminders(userId)
+        data = result.data
+        error = result.error
+        if (!error) break
+        if (!isTransientFetchError(error) || attempt === 2) break
+        await delay(400 * (attempt + 1))
+      }
 
       if (error) {
         console.error('Reminders load error:', error)
@@ -286,12 +313,144 @@ export default function Reminders() {
   }
 
   const today = new Date().toISOString().split('T')[0]
+
+  useEffect(() => {
+    if (loading || boardTabInitialized.current) return
+    boardTabInitialized.current = true
+    const overdue = reminders.filter(r => isPendingReminder(r) && r.due_date < today)
+    const todayTasks = reminders.filter(r => isPendingReminder(r) && r.due_date === today)
+    if (overdue.length) setBoardColumn('overdue')
+    else if (todayTasks.length) setBoardColumn('today')
+  }, [loading, reminders, today])
+
+  useEffect(() => {
+    if (view !== 'calendar') return
+    setSelectedDate((current) => current || today)
+  }, [view, today])
   
   const groupedByStatus = {
     overdue: reminders.filter(r => isPendingReminder(r) && r.due_date < today),
     today: reminders.filter(r => isPendingReminder(r) && r.due_date === today),
     upcoming: reminders.filter(r => isPendingReminder(r) && r.due_date > today),
     completed: reminders.filter(r => r.status === 'completed'),
+  }
+
+  function getColumnItems(columnId, limit = 10) {
+    const all = groupedByStatus[columnId] || []
+    return limit ? all.slice(0, limit) : all
+  }
+
+  function getColumnTotal(columnId) {
+    return groupedByStatus[columnId]?.length || 0
+  }
+
+  function renderBoardTaskCard(r, columnId) {
+    return (
+      <div
+        key={r.id}
+        className="bg-white/80 backdrop-blur-sm rounded-xl p-3 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5"
+      >
+        <div className="flex items-center gap-2">
+          {getIcon(r.type)}
+          <span className="text-sm font-medium truncate flex-1">{r.title}</span>
+          {columnId !== 'completed' && (
+            <span className="text-[10px] text-gray-400 shrink-0">
+              {new Date(r.due_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+            </span>
+          )}
+        </div>
+        {r.plants && (
+          <div
+            className="flex items-center gap-1.5 mt-2 cursor-pointer"
+            onClick={() => { setSelectedReminder(r); setShowTimeline(true) }}
+          >
+            <PlantImage
+              src={r.plants.image_url}
+              alt={r.plants.name}
+              className="w-5 h-5 rounded-full object-cover"
+              fallbackClassName="w-5 h-5 rounded-full"
+              compact
+            />
+            <span className="text-xs text-gray-500">{r.plants.name}</span>
+          </div>
+        )}
+
+        {columnId === 'overdue' && (
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => completeReminder(r.id)}
+              disabled={completingId === r.id}
+              className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
+            >
+              {completingId === r.id ? '...' : '✓ Готово'}
+            </button>
+            <button
+              onClick={() => deleteReminder(r.id)}
+              disabled={deletingId === r.id}
+              className="text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
+            >
+              {deletingId === r.id ? '...' : '✕ Удалить'}
+            </button>
+          </div>
+        )}
+
+        {columnId === 'today' && (
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => completeReminder(r.id)}
+              disabled={completingId === r.id}
+              className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
+            >
+              {completingId === r.id ? '...' : '✓ Готово'}
+            </button>
+            <button
+              onClick={() => skipReminder(r.id)}
+              className="flex-1 text-xs bg-gray-100 text-gray-600 px-2 py-2 rounded-lg hover:bg-gray-200 transition-all min-h-[36px]"
+            >
+              → Завтра
+            </button>
+            <button
+              onClick={() => deleteReminder(r.id)}
+              disabled={deletingId === r.id}
+              className="text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
+            >
+              {deletingId === r.id ? '...' : '✕'}
+            </button>
+          </div>
+        )}
+
+        {columnId === 'upcoming' && (
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => completeReminder(r.id)}
+              disabled={completingId === r.id}
+              className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
+            >
+              {completingId === r.id ? '...' : '✓ Готово'}
+            </button>
+            <button
+              onClick={() => deleteReminder(r.id)}
+              disabled={deletingId === r.id}
+              className="text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
+            >
+              {deletingId === r.id ? '...' : '✕'}
+            </button>
+          </div>
+        )}
+
+        {columnId === 'completed' && (
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => deleteReminder(r.id)}
+              disabled={deletingId === r.id}
+              className="w-full text-xs bg-gray-100 text-gray-500 px-2 py-2 rounded-lg hover:bg-gray-200 transition-all min-h-[36px] disabled:opacity-50"
+            >
+              {deletingId === r.id ? '...' : 'Удалить'}
+            </button>
+          </div>
+        )}
+      </div>
+    )
   }
 
   const stats = {
@@ -351,7 +510,7 @@ export default function Reminders() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
+      <div className="page-shell min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0 overflow-x-hidden">
         <Header />
         <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-16 flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
@@ -363,10 +522,10 @@ export default function Reminders() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
+    <div className="page-shell min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0 overflow-x-hidden">
       <Header />
       
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
 
         {loadError && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -444,154 +603,88 @@ export default function Reminders() {
           </div>
         )}
 
-        {/* Статистика */}
-        <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-6">
+        {/* Статистика / вкладки доски */}
+        {view === 'board' && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6">
           {COLUMNS.map(col => {
-            const count = col.id === 'completed' ? stats.completed : col.id === 'overdue' ? stats.overdue : col.id === 'today' ? groupedByStatus.today.length : groupedByStatus.upcoming.length
+            const count = getColumnTotal(col.id)
+            const isActiveTab = boardColumn === col.id
             return (
-              <div 
-                key={col.id} 
-                className={`bg-gradient-to-br ${col.color} rounded-xl p-2 sm:p-3 text-center border ${col.border} transition-all hover:scale-105 cursor-pointer`}
-                onClick={() => {
-                  if (col.id === 'today') setView('board')
-                }}
+              <button
+                type="button"
+                key={col.id}
+                onClick={() => setBoardColumn(col.id)}
+                className={`bg-gradient-to-br ${col.color} rounded-xl p-2 sm:p-3 text-center border ${col.border} transition-all sm:hover:scale-105 ${
+                  isActiveTab ? 'ring-2 ring-green-600 ring-offset-1 shadow-md' : ''
+                }`}
               >
                 <col.icon className="w-4 h-4 mx-auto mb-1 opacity-60" />
                 <p className="text-xl sm:text-2xl font-bold">{count}</p>
                 <p className="text-[10px] sm:text-xs text-gray-600">{col.title}</p>
-              </div>
+              </button>
             )
           })}
         </div>
+        )}
 
-        {/* Доска задач - последние 10 в каждом столбце */}
+        {/* Доска задач — мобильный список по выбранной вкладке */}
         {view === 'board' && (
-          <div className="overflow-x-auto pb-2 -mx-3 px-3">
-            <div className="grid grid-cols-4 gap-3 min-w-[600px] sm:min-w-0">
+          <div className="md:hidden">
+            {(() => {
+              const activeCol = COLUMNS.find(c => c.id === boardColumn) || COLUMNS[1]
+              const items = getColumnItems(boardColumn)
+              const total = getColumnTotal(boardColumn)
+              return (
+                <div className={`bg-gradient-to-br ${activeCol.color} rounded-2xl p-3 border ${activeCol.border} shadow-sm`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <activeCol.icon className="w-4 h-4" />
+                    <h3 className="font-semibold text-sm">{activeCol.title}</h3>
+                    <span className="ml-auto text-xs text-gray-500 bg-white/50 px-2 py-0.5 rounded-full">
+                      {items.length} из {total}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 min-h-[80px]">
+                    {items.map(r => renderBoardTaskCard(r, boardColumn))}
+                    {items.length === 0 && (
+                      <div className="text-center py-8">
+                        <Flower2 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-xs text-gray-400">Нет задач в этой категории</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {total > 10 && (
+                    <p className="text-[11px] text-gray-500 text-center mt-3">
+                      Показаны последние 10 из {total}. На компьютере — полная доска.
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* Доска задач — 4 колонки на планшете и десктопе */}
+        {view === 'board' && (
+          <div className="hidden md:block overflow-x-hidden">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
               {COLUMNS.map(col => {
-                let items = []
-                if (col.id === 'overdue') items = groupedByStatus.overdue.slice(0, 10)
-                if (col.id === 'today') items = groupedByStatus.today.slice(0, 10)
-                if (col.id === 'upcoming') items = groupedByStatus.upcoming.slice(0, 10)
-                if (col.id === 'completed') items = groupedByStatus.completed.slice(0, 10)
-                
+                const items = getColumnItems(col.id)
+                const total = getColumnTotal(col.id)
+
                 return (
                   <div key={col.id} className={`bg-gradient-to-br ${col.color} rounded-2xl p-3 border ${col.border} shadow-sm`}>
                     <div className="flex items-center gap-2 mb-3">
                       <col.icon className="w-4 h-4" />
                       <h3 className="font-semibold text-sm">{col.title}</h3>
                       <span className="ml-auto text-xs text-gray-500 bg-white/50 px-2 py-0.5 rounded-full">
-                        {items.length} / {col.id === 'overdue' ? groupedByStatus.overdue.length : 
-                          col.id === 'today' ? groupedByStatus.today.length : 
-                          col.id === 'upcoming' ? groupedByStatus.upcoming.length : 
-                          groupedByStatus.completed.length}
+                        {items.length} / {total}
                       </span>
                     </div>
-                    
+
                     <div className="space-y-2 min-h-[100px]">
-                      {items.map(r => (
-                        <div 
-                          key={r.id} 
-                          className="bg-white/80 backdrop-blur-sm rounded-xl p-3 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5"
-                        >
-                          <div className="flex items-center gap-2">
-                            {getIcon(r.type)}
-                            <span className="text-sm font-medium truncate flex-1">{r.title}</span>
-                          </div>
-                          {r.plants && (
-                            <div 
-                              className="flex items-center gap-1.5 mt-2 cursor-pointer" 
-                              onClick={() => { setSelectedReminder(r); setShowTimeline(true); }}
-                            >
-                              <PlantImage
-                                src={r.plants.image_url}
-                                alt={r.plants.name}
-                                className="w-5 h-5 rounded-full object-cover"
-                                fallbackClassName="w-5 h-5 rounded-full"
-                                compact
-                              />
-                              <span className="text-xs text-gray-500">{r.plants.name}</span>
-                            </div>
-                          )}
-                          
-                          {/* Кнопки в зависимости от столбца */}
-                          {col.id === 'overdue' && (
-                            <div className="flex gap-2 mt-3">
-                              <button 
-                                onClick={() => completeReminder(r.id)} 
-                                disabled={completingId === r.id}
-                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
-                              >
-                                {completingId === r.id ? '...' : '✓ Готово'}
-                              </button>
-                              <button 
-                                onClick={() => deleteReminder(r.id)} 
-                                disabled={deletingId === r.id}
-                                className="text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
-                              >
-                                {deletingId === r.id ? '...' : '✕ Удалить'}
-                              </button>
-                            </div>
-                          )}
-                          
-                          {col.id === 'today' && (
-                            <div className="flex gap-2 mt-3">
-                              <button 
-                                onClick={() => completeReminder(r.id)} 
-                                disabled={completingId === r.id}
-                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
-                              >
-                                {completingId === r.id ? '...' : '✓ Готово'}
-                              </button>
-                              <button 
-                                onClick={() => skipReminder(r.id)} 
-                                className="flex-1 text-xs bg-gray-100 text-gray-600 px-2 py-2 rounded-lg hover:bg-gray-200 transition-all min-h-[36px]"
-                              >
-                                → Завтра
-                              </button>
-                              <button 
-                                onClick={() => deleteReminder(r.id)} 
-                                disabled={deletingId === r.id}
-                                className="text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
-                              >
-                                {deletingId === r.id ? '...' : '✕'}
-                              </button>
-                            </div>
-                          )}
-                          
-                          {col.id === 'upcoming' && (
-                            <div className="flex gap-2 mt-3">
-                              <button 
-                                onClick={() => completeReminder(r.id)} 
-                                disabled={completingId === r.id}
-                                className="flex-1 text-xs bg-green-100 text-green-700 px-2 py-2 rounded-lg hover:bg-green-200 transition-all min-h-[36px] font-medium disabled:opacity-50"
-                              >
-                                {completingId === r.id ? '...' : '✓ Готово'}
-                              </button>
-                              <button 
-                                onClick={() => deleteReminder(r.id)} 
-                                disabled={deletingId === r.id}
-                                className="text-xs bg-red-50 text-red-500 px-2 py-2 rounded-lg hover:bg-red-100 transition-all min-h-[36px] disabled:opacity-50"
-                              >
-                                {deletingId === r.id ? '...' : '✕'}
-                              </button>
-                            </div>
-                          )}
-                          
-                          {col.id === 'completed' && (
-                            <div className="flex gap-2 mt-3">
-                              <button 
-                                onClick={() => deleteReminder(r.id)} 
-                                disabled={deletingId === r.id}
-                                className="w-full text-xs bg-gray-100 text-gray-500 px-2 py-2 rounded-lg hover:bg-gray-200 transition-all min-h-[36px] disabled:opacity-50"
-                              >
-                                {deletingId === r.id ? '...' : 'Удалить'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      
+                      {items.map(r => renderBoardTaskCard(r, col.id))}
                       {items.length === 0 && (
                         <div className="text-center py-6">
                           <Flower2 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
@@ -606,14 +699,14 @@ export default function Reminders() {
           </div>
         )}
 
-        {/* КРАСИВЫЙ КАЛЕНДАРЬ с лунными фазами */}
+        {/* Календарь */}
         {view === 'calendar' && (
           <div className="flex flex-col lg:flex-row gap-4 sm:gap-6">
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
                 
                 {/* Заголовок месяца */}
-                <div className="bg-gradient-to-r from-green-700 to-emerald-600 text-white px-4 py-4">
+                <div className="bg-gradient-to-r from-green-700 to-emerald-600 text-white px-3 sm:px-4 py-3 sm:py-4">
                   <div className="flex items-center justify-between">
                     <button 
                       onClick={() => { 
@@ -624,13 +717,13 @@ export default function Reminders() {
                           setCalMonth(m => m - 1) 
                         } 
                       }} 
-                      className="p-2 hover:bg-white/20 rounded-xl transition-all min-w-[44px] min-h-[44px]"
+                      className="p-2 hover:bg-white/20 rounded-xl transition-all min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px]"
                     >
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                     <div className="text-center">
-                      <h2 className="text-xl font-bold">{MONTHS[calMonth]}</h2>
-                      <p className="text-sm text-white/70">{calYear}</p>
+                      <h2 className="text-lg sm:text-xl font-bold">{MONTHS[calMonth]}</h2>
+                      <p className="text-xs sm:text-sm text-white/70">{calYear}</p>
                     </div>
                     <button 
                       onClick={() => { 
@@ -641,7 +734,7 @@ export default function Reminders() {
                           setCalMonth(m => m + 1) 
                         } 
                       }} 
-                      className="p-2 hover:bg-white/20 rounded-xl transition-all min-w-[44px] min-h-[44px]"
+                      className="p-2 hover:bg-white/20 rounded-xl transition-all min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px]"
                     >
                       <ChevronRight className="w-5 h-5" />
                     </button>
@@ -651,94 +744,136 @@ export default function Reminders() {
                 {/* Дни недели */}
                 <div className="grid grid-cols-7 border-b bg-gray-50">
                   {DAYS.map(d => (
-                    <div key={d} className="p-3 text-center text-sm font-semibold text-gray-600">
-                      {d}
+                    <div key={d} className="py-2 sm:p-3 text-center text-[10px] sm:text-sm font-semibold text-gray-600">
+                      <span className="sm:hidden">{d[0]}</span>
+                      <span className="hidden sm:inline">{d}</span>
                     </div>
                   ))}
                 </div>
                 
-                {/* Дни месяца с луной */}
+                {/* Дни месяца */}
                 <div className="grid grid-cols-7">
                   {calendarDays.map((item, i) => {
-                    if (!item) return <div key={`e${i}`} className="p-2 border-r border-b min-h-[100px] bg-gray-50/30" />
-                    
+                    if (!item) {
+                      return (
+                        <div
+                          key={`e${i}`}
+                          className="aspect-square border-r border-b bg-gray-50/30 sm:aspect-auto sm:min-h-[100px]"
+                        />
+                      )
+                    }
+
                     const isSelected = item.date === selectedDate
                     
                     return (
                       <div 
                         key={item.date} 
                         onClick={() => setSelectedDate(item.date)}
-                        className={`p-2 border-r border-b cursor-pointer transition-all duration-300 min-h-[100px] hover:shadow-inner ${
-                          isSelected ? 'bg-gradient-to-br from-green-50 to-emerald-50 ring-2 ring-green-400 ring-inset' : ''
+                        className={`aspect-square border-r border-b cursor-pointer transition-all duration-200 overflow-hidden sm:aspect-auto sm:min-h-[100px] sm:p-2 hover:shadow-inner ${
+                          isSelected ? 'bg-gradient-to-br from-green-50 to-emerald-50 ring-2 ring-green-400 ring-inset z-[1]' : ''
                         } ${item.isToday ? 'bg-amber-50/50' : ''}`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className={`text-sm font-medium w-7 h-7 rounded-full flex items-center justify-center ${
-                            item.isToday ? 'bg-amber-500 text-white shadow-md' : ''
+                        {/* Мобильная ячейка — компактно */}
+                        <div className="flex flex-col items-center justify-center h-full p-0.5 sm:hidden">
+                          <span className={`text-xs font-semibold w-6 h-6 rounded-full flex items-center justify-center leading-none ${
+                            item.isToday ? 'bg-amber-500 text-white' : 'text-gray-800'
                           }`}>
                             {item.day}
                           </span>
-                          <span className="text-xl" title="Лунная фаза">{item.moonEmoji}</span>
+                          {(item.pending > 0 || item.completed > 0) && (
+                            <div className="flex items-center gap-0.5 mt-0.5">
+                              {item.pending > 0 && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                              {item.completed > 0 && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                            </div>
+                          )}
                         </div>
-                        
-                        <div className="space-y-1 mt-2">
-                          {item.pending > 0 && (
-                            <div className="flex items-center gap-1 text-xs bg-red-100 rounded-full px-2 py-0.5 inline-flex">
-                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                              <span className="text-red-600">{item.pending} задач</span>
-                            </div>
-                          )}
-                          {item.completed > 0 && (
-                            <div className="flex items-center gap-1 text-xs bg-green-100 rounded-full px-2 py-0.5 inline-flex mt-1">
-                              <CheckCircle className="w-3 h-3 text-green-500" />
-                              <span className="text-green-600">{item.completed} готово</span>
-                            </div>
-                          )}
+
+                        {/* Десктоп / планшет */}
+                        <div className="hidden sm:block h-full">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-sm font-medium w-7 h-7 rounded-full flex items-center justify-center ${
+                              item.isToday ? 'bg-amber-500 text-white shadow-md' : ''
+                            }`}>
+                              {item.day}
+                            </span>
+                            <span className="text-xl" title="Лунная фаза">{item.moonEmoji}</span>
+                          </div>
+                          
+                          <div className="space-y-1 mt-2">
+                            {item.pending > 0 && (
+                              <div className="flex items-center gap-1 text-xs bg-red-100 rounded-full px-2 py-0.5 inline-flex">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                                <span className="text-red-600">{item.pending} задач</span>
+                              </div>
+                            )}
+                            {item.completed > 0 && (
+                              <div className="flex items-center gap-1 text-xs bg-green-100 rounded-full px-2 py-0.5 inline-flex mt-1">
+                                <CheckCircle className="w-3 h-3 text-green-500" />
+                                <span className="text-green-600">{item.completed} готово</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )
                   })}
                 </div>
+
+                <p className="sm:hidden px-3 py-2 text-[10px] text-gray-400 text-center border-t bg-gray-50">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 mr-1 align-middle" />
+                  активные
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 mx-1 align-middle" />
+                  выполненные
+                </p>
               </div>
             </div>
             
-            {/* Боковая панель дня */}
-            <div className="lg:w-96">
+            {/* Задачи выбранного дня */}
+            <div className="lg:w-96 min-w-0">
               {selectedDate ? (
                 <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-                  <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-5 py-4">
-                    <div>
-                      <p className="text-sm text-white/80">Выбранный день</p>
-                      <h3 className="text-lg font-bold">
-                        {new Date(selectedDate).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
-                      </h3>
+                  <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 sm:px-5 py-3 sm:py-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm text-white/80">Выбранный день</p>
+                        <h3 className="text-base sm:text-lg font-bold leading-snug">
+                          {new Date(selectedDate).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDate(today)}
+                        className="shrink-0 text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-lg transition-colors"
+                      >
+                        Сегодня
+                      </button>
                     </div>
                   </div>
                   
-                  <div className="p-5">
-                    <div className="flex items-center justify-between mb-4">
+                  <div className="p-4 sm:p-5">
+                    <div className="flex items-center justify-between mb-4 gap-2">
                       <p className="text-sm text-gray-500">{selectedDayReminders.length} задач</p>
                       <button 
                         onClick={() => setShowAddModal(true)}
-                        className="text-xs bg-green-50 text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-100 transition-colors"
+                        className="text-xs bg-green-50 text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-100 transition-colors shrink-0"
                       >
                         + Добавить
                       </button>
                     </div>
                     
                     {selectedDayReminders.length === 0 ? (
-                      <div className="text-center py-12">
-                        <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                          <Flower2 className="w-8 h-8 text-green-400" />
+                      <div className="text-center py-8 sm:py-12">
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Flower2 className="w-7 h-7 sm:w-8 sm:h-8 text-green-400" />
                         </div>
                         <p className="text-gray-400 text-sm">Нет задач на этот день</p>
                       </div>
                     ) : (
-                      <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      <div className="space-y-2 max-h-[50vh] sm:max-h-[400px] overflow-y-auto">
                         {selectedDayReminders.map(r => (
                           <div 
                             key={r.id} 
-                            className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
+                            className={`flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl transition-all ${
                               r.status === 'completed' ? 'bg-gray-50 opacity-60' : 
                               r.due_date < today ? 'bg-red-50 border-l-4 border-red-400' : 
                               r.due_date === today ? 'bg-amber-50 border-l-4 border-amber-400' : 'bg-gray-50'
@@ -748,7 +883,7 @@ export default function Reminders() {
                               type="button"
                               onClick={() => completeReminder(r.id)} 
                               disabled={r.status === 'completed' || completingId === r.id}
-                              className="min-w-[36px] min-h-[36px] flex items-center justify-center disabled:opacity-50"
+                              className="min-w-[36px] min-h-[36px] flex items-center justify-center disabled:opacity-50 shrink-0"
                             >
                               {r.status === 'completed' ? 
                                 <CheckCircle className="w-5 h-5 text-green-500" /> : 
@@ -756,8 +891,8 @@ export default function Reminders() {
                               }
                             </button>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                {getIcon(r.type, "w-4 h-4")}
+                              <div className="flex items-center gap-2 min-w-0">
+                                {getIcon(r.type, "w-4 h-4 shrink-0")}
                                 <span className={`text-sm truncate ${r.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-800 font-medium'}`}>
                                   {r.title}
                                 </span>
@@ -768,7 +903,7 @@ export default function Reminders() {
                             </div>
                             <button 
                               onClick={() => deleteReminder(r.id)} 
-                              className="p-2 text-gray-300 hover:text-red-500 min-w-[36px] min-h-[36px] transition-colors"
+                              className="p-2 text-gray-300 hover:text-red-500 min-w-[36px] min-h-[36px] transition-colors shrink-0"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -779,7 +914,7 @@ export default function Reminders() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-white rounded-2xl shadow-xl p-8 text-center border border-gray-100">
+                <div className="hidden sm:block bg-white rounded-2xl shadow-xl p-8 text-center border border-gray-100">
                   <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Calendar className="w-10 h-10 text-green-600" />
                   </div>

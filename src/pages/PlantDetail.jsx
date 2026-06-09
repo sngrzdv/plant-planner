@@ -102,7 +102,7 @@ export default function PlantDetail() {
   }
   
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 sm:pb-0">
+    <div className="page-shell min-h-screen bg-gray-50 pb-20 sm:pb-0 overflow-x-hidden">
       <Header />
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-4">
@@ -111,16 +111,16 @@ export default function PlantDetail() {
             <span>Назад к каталогу</span>
           </Link>
           
-          <div className="flex items-start gap-6">
+          <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-6">
             <PlantImage
               src={plant.image_url}
               alt={plant.name}
-              className="w-32 h-32 rounded-xl object-cover shrink-0"
-              fallbackClassName="w-32 h-32 rounded-xl shrink-0"
+              className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl object-cover shrink-0"
+              fallbackClassName="w-24 h-24 sm:w-32 sm:h-32 rounded-xl shrink-0"
             />
-            <div className="flex-1 flex items-start justify-between gap-3">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-800">{plant.name}</h1>
+            <div className="flex-1 flex items-start justify-between gap-3 min-w-0 w-full">
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 break-words">{plant.name}</h1>
                 <p className="text-gray-500 mt-1">{plant.category?.name}</p>
                 {plant.scientific_name && (
                   <p className="text-sm text-gray-400 italic mt-1">{plant.scientific_name}</p>
@@ -138,7 +138,7 @@ export default function PlantDetail() {
       
       <main className="max-w-4xl mx-auto px-4 py-6">
         {/* Базовая информация */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow-sm p-4 text-center">
             <Droplets className="w-8 h-8 text-blue-500 mx-auto mb-2" />
             <p className="text-sm text-gray-500">Полив</p>
@@ -158,7 +158,7 @@ export default function PlantDetail() {
         
         {/* Вкладки */}
         <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-          <div className="flex gap-4 border-b pb-2">
+          <div className="flex gap-2 sm:gap-4 border-b pb-2 overflow-x-auto -mx-1 px-1 scrollbar-thin">
             {[
               { key: 'info', label: 'Общее', icon: Sprout },
               { key: 'varieties', label: 'Сорта', icon: Wheat },
@@ -169,7 +169,7 @@ export default function PlantDetail() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1.5 px-4 py-2 font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 font-medium transition-colors whitespace-nowrap shrink-0 text-sm sm:text-base ${
                   activeTab === tab.key ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500'
                 }`}
               >

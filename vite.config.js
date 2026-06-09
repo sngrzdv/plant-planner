@@ -22,6 +22,14 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/supabase/, ''),
           timeout: 120_000,
           proxyTimeout: 120_000,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              proxyReq.setHeader('Accept-Encoding', 'identity')
+            })
+            proxy.on('error', (err) => {
+              console.warn('[vite supabase proxy]', err.message)
+            })
+          },
         },
       },
     },

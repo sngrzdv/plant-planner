@@ -117,6 +117,8 @@ export default function GardenView() {
   }
   const onDrag = (e) => { if (!dragging) return; setOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }) }
   const stopDrag = () => setDragging(false)
+  const pointerDown = (e) => startDrag(e.touches?.[0] || e)
+  const pointerMove = (e) => onDrag(e.touches?.[0] || e)
 
   const handleWheel = (e) => {
     setScale(s => Math.min(2, Math.max(0.2, s + (e.deltaY > 0 ? -0.1 : 0.1))))
@@ -190,36 +192,39 @@ export default function GardenView() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
-      <Header />
+    <div className="page-shell h-[100dvh] flex flex-col bg-gray-50 overflow-hidden">
+      <div className="hidden sm:block"><Header /></div>
       
       {/* Верхняя панель */}
-      <div className="bg-white border-b px-4 py-2 flex items-center justify-between shrink-0 shadow-sm">
-        <div className="flex items-center gap-2">
-          <Link to="/gardens" className="p-1.5 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-4 h-4" /></Link>
-          <div>
-            <h1 className="font-semibold text-sm">{layout?.name}</h1>
-            {layout?.location && <p className="text-xs text-gray-500"><MapPin className="w-3 h-3 inline" /> {layout.location}</p>}
+      <div className="bg-white border-b px-3 sm:px-4 py-2 flex items-center justify-between shrink-0 shadow-sm gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link to="/gardens" className="p-1.5 hover:bg-gray-100 rounded-lg shrink-0"><ArrowLeft className="w-4 h-4" /></Link>
+          <div className="min-w-0">
+            <h1 className="font-semibold text-sm truncate">{layout?.name}</h1>
+            {layout?.location && <p className="text-xs text-gray-500 truncate"><MapPin className="w-3 h-3 inline" /> {layout.location}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <button onClick={() => setScale(s => Math.max(0.2, s - 0.1))} className="p-1.5 hover:bg-gray-100 rounded-lg"><Minus className="w-3.5 h-3.5" /></button>
-          <span className="text-xs w-10 text-center font-mono">{Math.round(scale * 100)}%</span>
+          <span className="text-xs w-8 sm:w-10 text-center font-mono">{Math.round(scale * 100)}%</span>
           <button onClick={() => setScale(s => Math.min(2, s + 0.1))} className="p-1.5 hover:bg-gray-100 rounded-lg"><Plus className="w-3.5 h-3.5" /></button>
-          <div className="w-px h-5 bg-gray-300 mx-1" />
-          <Link to={`/garden/${id}/edit`} className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
-            <Edit className="w-3.5 h-3.5" /> Редактировать
+          <div className="w-px h-5 bg-gray-300 mx-1 hidden sm:block" />
+          <Link to={`/garden/${id}/edit`} className="flex items-center gap-1 bg-blue-600 text-white px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
+            <Edit className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Редактировать</span>
           </Link>
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
         {/* Карта участка */}
         <main
-          className="flex-1 overflow-hidden relative bg-gray-50"
-          onMouseDown={startDrag}
-          onMouseMove={onDrag}
+          className="flex-1 overflow-hidden relative bg-gray-50 min-h-[45vh] lg:min-h-0"
+          onMouseDown={pointerDown}
+          onTouchStart={pointerDown}
+          onMouseMove={pointerMove}
+          onTouchMove={pointerMove}
           onMouseUp={stopDrag}
+          onTouchEnd={stopDrag}
           onMouseLeave={stopDrag}
           onWheel={handleWheel}
           style={{ cursor: dragging ? 'grabbing' : 'grab' }}
@@ -292,7 +297,7 @@ export default function GardenView() {
 
         {/* Боковая панель с информацией о зоне */}
         {selectedZone ? (
-          <div className="w-full lg:w-80 bg-white border-l shadow-lg p-5 space-y-4 shrink-0 overflow-y-auto">
+          <div className="fixed inset-x-0 bottom-0 z-30 max-h-[75vh] overflow-y-auto rounded-t-2xl bg-white border-t border-gray-200 shadow-2xl p-5 space-y-4 lg:static lg:z-auto lg:max-h-none lg:w-80 lg:shrink-0 lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-lg">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-lg">{selectedZone.name}</h3>
               <button onClick={() => setSelectedZone(null)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4 text-gray-400" /></button>
@@ -349,7 +354,7 @@ export default function GardenView() {
             </div>
           </div>
         ) : (
-          <div className="w-full lg:w-72 bg-white border-l p-5 flex items-center justify-center shrink-0">
+          <div className="hidden lg:flex w-72 bg-white border-l p-5 items-center justify-center shrink-0">
             <p className="text-gray-400 text-sm text-center">
               Кликните на зону участка,<br/>чтобы увидеть информацию
               <br/><br/>

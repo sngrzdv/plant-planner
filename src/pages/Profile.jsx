@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import {
   BarChart3, User, Settings, Bell, Moon, Sprout,
-  MapPin, CloudRain, Mail, Download,
+  MapPin, CloudRain, Mail,
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
@@ -12,7 +12,7 @@ import ProfileStatsPanel from '../components/ProfileStatsPanel'
 import ProfileAccountPanel from '../components/ProfileAccountPanel'
 import AutoSaveIndicator from '../components/AutoSaveIndicator'
 import { notificationService } from '../services/notificationService'
-import { fetchProfileStats } from '../services/profileStatsService'
+import { fetchGardenSeasonStats } from '../services/gardenSeasonStatsService'
 import { profileToPrefs, saveProfilePrefs, prefsToDbColumns } from '../lib/profilePrefs'
 import { useAutoSave } from '../hooks/useAutoSave'
 import { toast } from '../store/toastStore'
@@ -22,6 +22,7 @@ export default function Profile() {
   const [activeTab, setActiveTab] = useState('account')
   const [statsData, setStatsData] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [seasonYear, setSeasonYear] = useState(new Date().getFullYear())
 
   const [fullName, setFullName] = useState(profile?.full_name || '')
   const [city, setCity] = useState(profile?.city || '')
@@ -86,32 +87,26 @@ export default function Profile() {
         setStatsData(null)
         return
       }
-      const data = await fetchProfileStats(userId)
+      const data = await fetchGardenSeasonStats(userId, seasonYear, profile?.full_name || '')
       setStatsData(data)
+      if (data?.availableYears?.length && !data.availableYears.includes(seasonYear)) {
+        setSeasonYear(data.availableYears[0])
+      }
     } catch (e) {
       console.error(e)
       toast.error('Не удалось загрузить статистику')
     } finally {
       setLoading(false)
     }
-  }, [profile?.id])
+  }, [profile?.id, profile?.full_name, seasonYear])
 
   useEffect(() => {
     if (activeTab !== 'stats') return
     loadStats()
   }, [activeTab, loadStats])
 
-  function exportStats() {
-    if (!statsData) return
-    const blob = new Blob([JSON.stringify({ ...statsData, exportedAt: new Date().toISOString() }, null, 2)], {
-      type: 'application/json',
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `plant-planner-stats-${new Date().toISOString().split('T')[0]}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+  function handleSeasonYearChange(year) {
+    setSeasonYear(year)
   }
 
   async function toggleNotifications() {
@@ -142,7 +137,7 @@ export default function Profile() {
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0">
+    <div className="page-shell min-h-screen bg-gradient-to-br from-gray-50 to-green-50 pb-20 sm:pb-0 overflow-x-hidden">
       <Header />
 
       <main className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
@@ -150,14 +145,6 @@ export default function Profile() {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Личный кабинет</h1>
           <div className="flex items-center gap-3">
             <AutoSaveIndicator status={autoSaveStatus} />
-            {activeTab === 'stats' && statsData && (
-              <button
-                onClick={exportStats}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
-              >
-                <Download className="w-4 h-4" /> Экспорт
-              </button>
-            )}
           </div>
         </div>
 
@@ -178,7 +165,14 @@ export default function Profile() {
           ))}
         </div>
 
-        {activeTab === 'stats' && <ProfileStatsPanel data={statsData} loading={loading} />}
+        {activeTab === 'stats' && (
+          <ProfileStatsPanel
+            data={statsData}
+            loading={loading}
+            seasonYear={seasonYear}
+            onSeasonYearChange={handleSeasonYearChange}
+          />
+        )}
 
         {activeTab === 'account' && (
           <ProfileAccountPanel

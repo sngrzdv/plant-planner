@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { getResetPasswordUrl } from '../lib/siteUrl'
-import { Sprout } from 'lucide-react'
+import AuthLayout from '../components/AuthLayout'
+
+const inputClass =
+  'w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500/30 focus:border-green-500 outline-none transition-colors'
 
 export default function Login() {
   const navigate = useNavigate()
-  
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -15,28 +18,24 @@ export default function Login() {
   const [resetMessage, setResetMessage] = useState('')
   const [showResetForm, setShowResetForm] = useState(false)
   const [error, setError] = useState('')
-  
+
   const handleLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
-    
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-    
-    if (error) {
-      if (error.message.includes('Invalid login credentials')) {
+
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email, password })
+
+    if (loginError) {
+      if (loginError.message.includes('Invalid login credentials')) {
         setError('Неверный email или пароль')
-      } else if (error.message.includes('Email not confirmed')) {
+      } else if (loginError.message.includes('Email not confirmed')) {
         setError('Email не подтверждён. Проверьте почту.')
       } else {
-        setError('Ошибка входа: ' + error.message)
+        setError('Ошибка входа: ' + loginError.message)
       }
       setLoading(false)
     } else {
-      // Session sync and profile load are handled in App.jsx.
       navigate('/dashboard')
       setLoading(false)
     }
@@ -53,9 +52,8 @@ export default function Login() {
     }
 
     setResetLoading(true)
-    const redirectTo = getResetPasswordUrl()
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
-      redirectTo,
+      redirectTo: getResetPasswordUrl(),
     })
 
     if (resetError) {
@@ -67,114 +65,102 @@ export default function Login() {
     setResetMessage('Письмо отправлено. Проверьте почту и перейдите по ссылке для смены пароля.')
     setResetLoading(false)
   }
-  
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100">
-      <div className="bg-white rounded-xl shadow-sm p-8 w-full max-w-md">
-        
-        {/* Логотип и заголовок */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-            <Sprout className="w-8 h-8 text-green-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800">Plant Planner</h1>
-          <p className="text-gray-600 mt-2">Войдите в свой аккаунт</p>
-        </div>
-        
-        {/* Сообщение об ошибке */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
-            {error}
-          </div>
-        )}
-        {resetMessage && (
-          <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg text-sm">
-            {resetMessage}
-          </div>
-        )}
-        
-        {/* Форма входа */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="your@email.com"
-              required
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Пароль
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="••••••••"
-              required
-            />
-          </div>
-          
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Вход...' : 'Войти'}
-          </button>
-        </form>
-        
-        {/* Ссылка на регистрацию */}
-        <p className="text-center mt-6 text-gray-600">
+    <AuthLayout
+      title="Вход"
+      subtitle="Планируйте участок, рассаду и уход"
+      footer={
+        <p className="text-center text-gray-600 text-sm">
           Нет аккаунта?{' '}
           <Link to="/register" className="text-green-600 hover:text-green-700 font-medium">
             Зарегистрироваться
           </Link>
         </p>
-        
-        <p className="text-center mt-2">
-          <button
-            onClick={() => {
-              setShowResetForm((prev) => !prev)
-              setResetEmail(email || '')
-              setError('')
-              setResetMessage('')
-            }}
-            className="text-sm text-gray-400 hover:text-green-600"
-          >
-            Забыли пароль?
-          </button>
-        </p>
+      }
+    >
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm border border-red-100">
+          {error}
+        </div>
+      )}
+      {resetMessage && (
+        <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-xl text-sm border border-green-100">
+          {resetMessage}
+        </div>
+      )}
 
-        {showResetForm && (
-          <form onSubmit={handleResetPassword} className="mt-4 p-4 bg-gray-50 rounded-lg space-y-3">
-            <p className="text-sm text-gray-600">Укажите email, и мы отправим ссылку для восстановления.</p>
-            <input
-              type="email"
-              value={resetEmail}
-              onChange={(e) => setResetEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="your@email.com"
-              required
-            />
-            <button
-              type="submit"
-              disabled={resetLoading}
-              className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-            >
-              {resetLoading ? 'Отправка...' : 'Отправить ссылку'}
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+      <form onSubmit={handleLogin} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={inputClass}
+            placeholder="your@email.com"
+            autoComplete="email"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Пароль</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={inputClass}
+            placeholder="••••••••"
+            autoComplete="current-password"
+            required
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-green-600 text-white py-3 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50 font-medium"
+        >
+          {loading ? 'Вход...' : 'Войти'}
+        </button>
+      </form>
+
+      <p className="text-center mt-5">
+        <button
+          type="button"
+          onClick={() => {
+            setShowResetForm((prev) => !prev)
+            setResetEmail(email || '')
+            setError('')
+            setResetMessage('')
+          }}
+          className="text-sm text-gray-500 hover:text-green-600"
+        >
+          Забыли пароль?
+        </button>
+      </p>
+
+      {showResetForm && (
+        <form onSubmit={handleResetPassword} className="mt-4 p-4 bg-gray-50 rounded-xl space-y-3 border border-gray-100">
+          <p className="text-sm text-gray-600">Укажите email — отправим ссылку для восстановления.</p>
+          <input
+            type="email"
+            value={resetEmail}
+            onChange={(e) => setResetEmail(e.target.value)}
+            className={inputClass}
+            placeholder="your@email.com"
+            required
+          />
+          <button
+            type="submit"
+            disabled={resetLoading}
+            className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50 font-medium"
+          >
+            {resetLoading ? 'Отправка...' : 'Отправить ссылку'}
+          </button>
+        </form>
+      )}
+    </AuthLayout>
   )
 }
