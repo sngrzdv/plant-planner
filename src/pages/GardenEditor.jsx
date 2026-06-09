@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Home, Square, Flower2, TreePine, Warehouse, Trash2, Plus, Minus, Eye, SquarePen, MousePointer2, PanelLeft, X } from 'lucide-react'
@@ -9,6 +9,10 @@ import { useReferenceStore } from '../store/referenceStore'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
 import PageNotFound from '../components/PageNotFound'
+import {
+  filterPlantsForBedType,
+  getFilterHintForBedType,
+} from '../lib/plantBedFilter'
 
 const ZONE_TYPES = [
   { type: 'house', name: 'Здание', shortLabel: 'З', color: '#D4A574', defaultW: 150, defaultH: 120 },
@@ -36,6 +40,7 @@ export default function GardenEditor() {
   const [showPlantModal, setShowPlantModal] = useState(false)
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false)
   const [allPlants, setAllPlants] = useState([])
+  const [plantCategories, setPlantCategories] = useState([])
 
   const loadData = useCallback(async () => {
     const [{ data: layoutData, error: layoutError }, { data: bedsData }] = await Promise.all([
@@ -103,10 +108,19 @@ export default function GardenEditor() {
   }
 
   async function openPlantModal() {
-    const data = await useReferenceStore.getState().getPlants()
+    const [data, categories] = await Promise.all([
+      useReferenceStore.getState().getPlants(),
+      useReferenceStore.getState().getCategories(),
+    ])
     setAllPlants(data || [])
+    setPlantCategories(categories || [])
     setShowPlantModal(true)
   }
+
+  const modalPlants = useMemo(
+    () => filterPlantsForBedType(allPlants, selectedZone?.type, plantCategories),
+    [allPlants, selectedZone?.type, plantCategories]
+  )
 
   async function saveZoneName(zoneId, newName) {
     if (!newName.trim()) return
@@ -457,8 +471,13 @@ export default function GardenEditor() {
       {showPlantModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowPlantModal(false)}>
           <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">Выберите растение</h2>
-            {allPlants.filter(p => p.planting_method === 'perennial').map(plant => (
+            <h2 className="text-lg font-semibold mb-2">Выберите растение</h2>
+            {getFilterHintForBedType(selectedZone?.type) && (
+              <p className="text-xs text-gray-500 mb-4">{getFilterHintForBedType(selectedZone?.type)}</p>
+            )}
+            {modalPlants.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">Нет подходящих растений для этой зоны</p>
+            ) : modalPlants.map(plant => (
               <button key={plant.id} onClick={async () => {
                 const { error } = await supabase.from('beds').update({ plant_id: plant.id }).eq('id', selectedZone.id)
                 if (error) {

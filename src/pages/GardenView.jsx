@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search, MousePointer2 } from 'lucide-react'
@@ -9,6 +9,13 @@ import { reminderService } from '../services/reminderService'
 import { useReferenceStore } from '../store/referenceStore'
 import { toast } from '../store/toastStore'
 import PageNotFound from '../components/PageNotFound'
+import {
+  filterPlantsForBedAndSearch,
+  getFilterHintForBedType,
+  getPlantBedRejectMessage,
+  isPlantAllowedForBedType,
+  withPlantCategory,
+} from '../lib/plantBedFilter'
 
 const ZONE_SHORT = {
   house: 'З', rect: 'О', flowerbed: 'К', tree: 'Д', greenhouse: 'Т', bush: 'К', path: '↔', pond: 'В',
@@ -32,6 +39,7 @@ export default function GardenView() {
   
   const [showPlantModal, setShowPlantModal] = useState(false)
   const [allPlants, setAllPlants] = useState([])
+  const [plantCategories, setPlantCategories] = useState([])
   const [searchPlant, setSearchPlant] = useState('')
   const [planting, setPlanting] = useState(false)
 
@@ -125,14 +133,28 @@ export default function GardenView() {
   }
 
   async function openPlantModal() {
-    const data = await useReferenceStore.getState().getPlants()
+    const [data, categories] = await Promise.all([
+      useReferenceStore.getState().getPlants(),
+      useReferenceStore.getState().getCategories(),
+    ])
     setAllPlants(data || [])
+    setPlantCategories(categories || [])
     setSearchPlant('')
     setShowPlantModal(true)
   }
 
   async function plantOnZone(plantId) {
     setPlanting(true)
+
+    const plant = withPlantCategory(
+      allPlants.find((p) => p.id === plantId),
+      plantCategories
+    )
+    if (plant && !isPlantAllowedForBedType(plant, selectedZone?.type)) {
+      toast.error(getPlantBedRejectMessage(selectedZone?.type, plant))
+      setPlanting(false)
+      return
+    }
 
     try {
       const { error: bedError } = await supabase
@@ -168,9 +190,11 @@ export default function GardenView() {
     }
   }
 
-  const filteredPlants = allPlants.filter(p => 
-    p.name.toLowerCase().includes(searchPlant.toLowerCase())
+  const filteredPlants = useMemo(
+    () => filterPlantsForBedAndSearch(allPlants, selectedZone?.type, searchPlant, plantCategories),
+    [allPlants, selectedZone?.type, searchPlant, plantCategories]
   )
+  const zoneFilterHint = getFilterHintForBedType(selectedZone?.type)
 
   if (loading) {
     return (
@@ -371,7 +395,7 @@ export default function GardenView() {
               <h2 className="text-xl font-semibold">Выберите растение</h2>
               <button onClick={() => setShowPlantModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
-            <div className="relative mb-4">
+            <div className="relative mb-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text" placeholder="Поиск..."
@@ -380,8 +404,11 @@ export default function GardenView() {
                 autoFocus
               />
             </div>
+            {zoneFilterHint && <p className="text-xs text-gray-500 mb-4">{zoneFilterHint}</p>}
             <div className="flex-1 overflow-y-auto space-y-2">
-              {filteredPlants.map(plant => (
+              {filteredPlants.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">{zoneFilterHint || 'Нет подходящих растений'}</p>
+              ) : filteredPlants.map(plant => (
                 <button
                   key={plant.id}
                   onClick={() => plantOnZone(plant.id)}

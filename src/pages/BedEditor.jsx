@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Save, Plus, Trash2, Minus, X, Search, Ruler, Grid3X3, Move, Droplets, Calendar, Sprout, Info, BarChart3, ClipboardList, PanelLeft } from 'lucide-react'
@@ -12,6 +12,12 @@ import { plantInBedGrid, removeGridPlanting } from '../services/plantingService'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
 import PageNotFound from '../components/PageNotFound'
+import {
+  filterPlantsForBedAndSearch,
+  getFilterHintForBedType,
+  getPlantBedRejectMessage,
+  isPlantAllowedForBedType,
+} from '../lib/plantBedFilter'
 
 const THEME = {
   soil: { base: '#a0826b', border: '#6B5443', highlight: '#8B7355' },
@@ -31,6 +37,32 @@ const SIZE_PRESETS = [
 ]
 
 const CELL_SIZE = 50
+
+function snapInt(value) {
+  return Math.round(Number(value) || 0)
+}
+
+/** Позиция и размер грядки — только целые пиксели, кратные сетке. */
+function normalizeSubBedRect(x, y, w, h, maxW, maxH) {
+  let px = snapInt(x)
+  let py = snapInt(y)
+  let width = Math.max(CELL_SIZE + 6, snapInt(w / CELL_SIZE) * CELL_SIZE + 6)
+  let height = Math.max(CELL_SIZE + 6, snapInt(h / CELL_SIZE) * CELL_SIZE + 6)
+
+  if (px < 0) px = 0
+  if (py < 0) py = 0
+
+  if (px + width > maxW) {
+    const cols = Math.max(1, Math.floor((maxW - px - 6) / CELL_SIZE))
+    width = cols * CELL_SIZE + 6
+  }
+  if (py + height > maxH) {
+    const rows = Math.max(1, Math.floor((maxH - py - 6) / CELL_SIZE))
+    height = rows * CELL_SIZE + 6
+  }
+
+  return { x: px, y: py, width, height }
+}
 
 const Tooltip = ({ children, text, position = 'top' }) => (
   <div className="group relative inline-flex">
@@ -180,7 +212,8 @@ export default function BedEditor() {
     const currentYear = new Date().getFullYear()
     const { data, error } = await supabase.from('bed_elements').insert({
       bed_id: id, type: 'row', name: 'Грядка',
-      pos_x: x, pos_y: y, width: w, height: h, color: '#6B4226', planted_year: currentYear
+      pos_x: snapInt(x), pos_y: snapInt(y), width: snapInt(w), height: snapInt(h),
+      color: '#6B4226', planted_year: currentYear
     }).select().single()
     if (error) {
       toast.error(`Не удалось добавить грядку: ${error.message}`)
@@ -200,33 +233,32 @@ export default function BedEditor() {
   }
 
   async function saveSubBed(bedId, x, y, w, h) {
-    let snappedW = Math.round(w / CELL_SIZE) * CELL_SIZE + 6
-    let snappedH = Math.round(h / CELL_SIZE) * CELL_SIZE + 6
-    if (x < 0) x = 0
-    if (y < 0) y = 0
-    if (x + snappedW > gardenWidth) snappedW = gardenWidth - x
-    if (y + snappedH > gardenHeight) snappedH = gardenHeight - y
+    const { x: px, y: py, width: snappedW, height: snappedH } = normalizeSubBedRect(
+      x, y, w, h, gardenWidth, gardenHeight
+    )
 
-    if (hasOverlap(bedId, x, y, snappedW, snappedH)) {
+    if (hasOverlap(bedId, px, py, snappedW, snappedH)) {
       const oldBed = beds.find(r => r.id === bedId)
-      setBeds(beds.map(r => r.id === bedId ? { ...r, _x: oldBed._x, _y: oldBed._y } : r))
+      setBeds(beds.map(r => r.id === bedId ? { ...r, _x: oldBed._x, _y: oldBed._y, _w: oldBed._w, _h: oldBed._h } : r))
       return
     }
 
     const oldBed = beds.find(r => r.id === bedId)
-    const dx = x - oldBed._x
-    const dy = y - oldBed._y
-    setBeds(beds.map(r => r.id === bedId ? { ...r, _x: x, _y: y, _w: snappedW, _h: snappedH } : r))
+    const dx = px - oldBed._x
+    const dy = py - oldBed._y
+    setBeds(beds.map(r => r.id === bedId ? { ...r, _x: px, _y: py, _w: snappedW, _h: snappedH } : r))
     
     const updatedPlants = bedPlants.map(p => {
       if (p._x >= oldBed._x && p._x <= oldBed._x + oldBed._w && p._y >= oldBed._y && p._y <= oldBed._y + oldBed._h) {
-        return { ...p, _x: p._x + dx, _y: p._y + dy }
+        return { ...p, _x: snapInt(p._x + dx), _y: snapInt(p._y + dy) }
       }
       return p
     })
     setBedPlants(updatedPlants)
 
-    const { error } = await supabase.from('bed_elements').update({ pos_x: Math.round(x), pos_y: Math.round(y), width: snappedW, height: snappedH }).eq('id', bedId)
+    const { error } = await supabase.from('bed_elements').update({
+      pos_x: px, pos_y: py, width: snappedW, height: snappedH,
+    }).eq('id', bedId)
     if (error) {
       toast.error(`Не удалось сохранить грядку: ${error.message}`)
       setBeds(beds)
@@ -235,7 +267,9 @@ export default function BedEditor() {
     }
     for (const plant of updatedPlants) {
       if (plant._x !== bedPlants.find(bp => bp.id === plant.id)?._x) {
-        const { error: plantError } = await supabase.from('bed_elements').update({ pos_x: Math.round(plant._x), pos_y: Math.round(plant._y) }).eq('id', plant.id)
+        const { error: plantError } = await supabase.from('bed_elements').update({
+          pos_x: snapInt(plant._x), pos_y: snapInt(plant._y),
+        }).eq('id', plant.id)
         if (plantError) {
           toast.error(`Не удалось сохранить положение: ${plantError.message}`)
           break
@@ -246,6 +280,10 @@ export default function BedEditor() {
 
   async function plantInCell(plant) {
     if (!selectedCell) return
+    if (!isPlantAllowedForBedType(plant, bed?.type)) {
+      toast.error(getPlantBedRejectMessage(bed?.type, plant))
+      return
+    }
     const isCompatible = await checkCompatibility(plant, selectedCell.x, selectedCell.y)
     if (!isCompatible) return
 
@@ -276,6 +314,10 @@ export default function BedEditor() {
     if (!plantId) return
     const plant = allPlants.find(p => p.id === plantId)
     if (!plant) return
+    if (!isPlantAllowedForBedType(plant, bed?.type)) {
+      toast.error(getPlantBedRejectMessage(bed?.type, plant))
+      return
+    }
     if (bedPlants.find(p => Math.abs(p._x - cellX) < 20 && Math.abs(p._y - cellY) < 20)) {
       toast.error('Эта клетка уже занята')
       return
@@ -287,6 +329,10 @@ export default function BedEditor() {
   }
 
   async function plantInCellDirect(plant, cellX, cellY) {
+    if (!isPlantAllowedForBedType(plant, bed?.type)) {
+      toast.error(getPlantBedRejectMessage(bed?.type, plant))
+      return
+    }
     try {
       const data = await plantInBedGrid(id, plant, { cellX, cellY })
       setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
@@ -330,7 +376,11 @@ export default function BedEditor() {
     setShowPlantModal(true)
   }
 
-  const filteredPlants = allPlants.filter(p => p.name.toLowerCase().includes(searchPlant.toLowerCase()) || p.category?.name?.toLowerCase().includes(searchPlant.toLowerCase()))
+  const filteredPlants = useMemo(
+    () => filterPlantsForBedAndSearch(allPlants, bed?.type, searchPlant),
+    [allPlants, bed?.type, searchPlant]
+  )
+  const bedFilterHint = getFilterHintForBedType(bed?.type)
 
   const closeTutorial = () => { setShowTutorial(false); localStorage.setItem('bedEditorTutorial', 'true') }
 
@@ -446,10 +496,15 @@ export default function BedEditor() {
             <div className="p-3 border-b border-gray-100">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Каталог</span>
               <p className="text-[10px] text-gray-400 mt-0.5">Перетащите на грядку</p>
+              {bedFilterHint && (
+                <p className="text-[10px] text-green-700/80 mt-1 leading-snug">{bedFilterHint}</p>
+              )}
               <div className="relative mt-2"><Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" /><input type="text" placeholder="Поиск..." value={searchPlant} onChange={e => setSearchPlant(e.target.value)} className="w-full pl-7 pr-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px]" /></div>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {filteredPlants.map(plant => (
+              {filteredPlants.length === 0 ? (
+                <p className="text-[11px] text-gray-400 text-center py-4 px-2">{bedFilterHint || 'Нет подходящих растений'}</p>
+              ) : filteredPlants.map(plant => (
                 <div key={plant.id} draggable onDragStart={(e) => { e.dataTransfer.setData('plantId', plant.id.toString()); e.dataTransfer.effectAllowed = 'copy' }}
                   className="flex items-center gap-2 p-2 rounded-lg hover:bg-green-50 cursor-grab active:cursor-grabbing transition-colors border border-transparent hover:border-green-200"
                   onClick={() => { if (selectedCell) plantInCell(plant) }}>
@@ -487,8 +542,14 @@ export default function BedEditor() {
                 const actualCellH = (subBed._h - 6) / rows
                 return (
                   <Rnd key={subBed.id} position={{ x: subBed._x, y: subBed._y }} size={{ width: subBed._w, height: subBed._h }} bounds="parent"
-                    onDragStart={() => setDraggingBed(true)} onDragStop={(_, d) => { setDraggingBed(false); saveSubBed(subBed.id, d.x, d.y, subBed._w, subBed._h) }}
-                    onResizeStop={(_, __, ref, ___, pos) => saveSubBed(subBed.id, pos.x, pos.y, parseInt(ref.style.width), parseInt(ref.style.height))}
+                    onDragStart={() => setDraggingBed(true)}                     onDragStop={(_, d) => { setDraggingBed(false); saveSubBed(subBed.id, d.x, d.y, subBed._w, subBed._h) }}
+                    onResizeStop={(_, __, ref, ___, pos) => saveSubBed(
+                      subBed.id,
+                      pos.x,
+                      pos.y,
+                      parseInt(ref.style.width, 10) || subBed._w,
+                      parseInt(ref.style.height, 10) || subBed._h
+                    )}
                     onClick={(e) => { e.stopPropagation(); setSelectedSubBed(subBed); }} dragGrid={[CELL_SIZE, CELL_SIZE]} resizeGrid={[CELL_SIZE, CELL_SIZE]} scale={scale}
                     className="sub-bed" style={{ cursor: draggingBed ? 'grabbing' : 'grab', zIndex: selectedSubBed?.id === subBed.id ? 20 : 10 }}>
                     <div className="w-full h-full rounded-xl overflow-hidden relative"
@@ -690,9 +751,10 @@ export default function BedEditor() {
             <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-green-50/50 to-emerald-50/30">
               <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Sprout className="w-5 h-5 text-green-600" /> Посадить растение</h2><button onClick={() => { setShowPlantModal(false); setSelectedCell(null); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X className="w-5 h-5 text-gray-400" /></button></div>
               <div className="relative"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400" /><input type="text" value={searchPlant} onChange={e => setSearchPlant(e.target.value)} placeholder="Поиск по названию или категории..." className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-400 transition-all shadow-sm" autoFocus /></div>
+              {bedFilterHint && <p className="text-xs text-gray-500 mt-3">{bedFilterHint}</p>}
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-1.5 bg-gray-50/30">
-              {filteredPlants.length === 0 ? <div className="text-center py-10 text-gray-400"><Search className="w-10 h-10 mx-auto mb-3 opacity-40" /><p className="font-medium">Ничего не найдено</p></div> : filteredPlants.map(plant => (
+              {filteredPlants.length === 0 ? <div className="text-center py-10 text-gray-400"><Search className="w-10 h-10 mx-auto mb-3 opacity-40" /><p className="font-medium">Ничего не найдено</p>{bedFilterHint && <p className="text-xs mt-2 px-4">{bedFilterHint}</p>}</div> : filteredPlants.map(plant => (
                 <button key={plant.id} onClick={() => plantInCell(plant)} className="w-full flex items-center gap-3 p-3.5 rounded-2xl hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50/60 hover:border-green-200 border border-transparent text-left transition-all duration-200 group">
                   <div className="w-13 h-13 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-green-200/60 group-hover:scale-105 transition-transform shadow-sm">
                     <PlantImage src={plant.image_url} alt={plant.name} className="w-full h-full object-cover" fallbackClassName="w-full h-full" />

@@ -15,6 +15,11 @@ import { notificationService } from '../services/notificationService'
 import { useReferenceStore } from '../store/referenceStore'
 import { JOURNAL_ACTION_LABELS } from '../lib/plantLabels'
 import { toast } from '../store/toastStore'
+import {
+  getPlantBedRejectMessage,
+  isPlantAllowedForBedType,
+  withPlantCategory,
+} from '../lib/plantBedFilter'
 import { confirm } from '../store/confirmStore'
 
 export default function Pots() {
@@ -233,6 +238,12 @@ export default function Pots() {
   async function transplant() {
     if (!selectedTransplantCell) {
       toast.error('Выберите клетку на грядке')
+      return
+    }
+
+    const plant = withPlantCategory(selectedPot?.plants, categories)
+    if (!isPlantAllowedForBedType(plant, bedForTransplant?.type)) {
+      toast.error(getPlantBedRejectMessage(bedForTransplant?.type, plant))
       return
     }
 
