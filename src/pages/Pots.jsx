@@ -252,7 +252,8 @@ export default function Pots() {
       const { data: bedElement, error: bedElementError } = await supabase.from('bed_elements').insert({
         bed_id: selectedBed, type: 'plant_spot',
         name: selectedPot.plants?.name || 'Растение',
-        pos_x: selectedTransplantCell.x + 4, pos_y: selectedTransplantCell.y + 4,
+        pos_x: Math.round(selectedTransplantCell.x) + 4,
+        pos_y: Math.round(selectedTransplantCell.y) + 4,
         width: CELL_SIZE - 8, height: CELL_SIZE - 8,
         color: '#4ADE80', plant_id: selectedPot.plant_id,
         planted_year: new Date().getFullYear()

@@ -508,7 +508,8 @@ export default function BedEditor() {
                       <div className="grid w-full h-full" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)` }}>
                         {Array.from({ length: cols * rows }, (_, i) => {
                           const col = i % cols; const row = Math.floor(i / cols)
-                          const cellX = subBed._x + 3 + col * actualCellW; const cellY = subBed._y + 3 + row * actualCellH
+                          const cellX = Math.round(subBed._x + 3 + col * actualCellW)
+                          const cellY = Math.round(subBed._y + 3 + row * actualCellH)
                           const plantInCell = bedPlants.find(p => Math.abs(p._x - cellX) < actualCellW / 2 && Math.abs(p._y - cellY) < actualCellH / 2)
                           return (
                             <div key={i} onClick={(e) => { e.stopPropagation(); handleCellClick(subBed.id, cellX, cellY); }}

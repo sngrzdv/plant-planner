@@ -2,6 +2,10 @@ import { supabase } from '../lib/supabase'
 
 const CELL_SIZE = 50
 
+function snapCoord(value) {
+  return Math.round(Number(value) || 0)
+}
+
 /** ID грядок пользователя (через layouts). */
 export async function fetchUserBedIds(userId) {
   if (!userId) return []
@@ -20,6 +24,8 @@ export async function fetchUserBedIds(userId) {
 export async function plantInBedGrid(bedId, plant, { cellX, cellY, plantedYear } = {}) {
   const year = plantedYear ?? new Date().getFullYear()
   const today = new Date().toISOString().split('T')[0]
+  const x = snapCoord(cellX) + 4
+  const y = snapCoord(cellY) + 4
 
   const { data: element, error: elementError } = await supabase
     .from('bed_elements')
@@ -27,8 +33,8 @@ export async function plantInBedGrid(bedId, plant, { cellX, cellY, plantedYear }
       bed_id: bedId,
       type: 'plant_spot',
       name: plant.name,
-      pos_x: cellX + 4,
-      pos_y: cellY + 4,
+      pos_x: x,
+      pos_y: y,
       width: CELL_SIZE - 8,
       height: CELL_SIZE - 8,
       color: '#4ADE80',
