@@ -614,8 +614,8 @@ export default function Reminders() {
                 type="button"
                 key={col.id}
                 onClick={() => setBoardColumn(col.id)}
-                className={`bg-gradient-to-br ${col.color} rounded-xl p-2 sm:p-3 text-center border ${col.border} transition-all sm:hover:scale-105 ${
-                  isActiveTab ? 'ring-2 ring-green-600 ring-offset-1 shadow-md' : ''
+                className={`bg-gradient-to-br ${col.color} rounded-xl p-2 sm:p-3 text-center border ${col.border} transition-all max-md:active:scale-[0.98] md:cursor-default sm:hover:scale-105 ${
+                  isActiveTab ? 'max-md:ring-2 max-md:ring-green-600 max-md:ring-offset-1 max-md:shadow-md' : ''
                 }`}
               >
                 <col.icon className="w-4 h-4 mx-auto mb-1 opacity-60" />

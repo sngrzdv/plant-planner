@@ -10,8 +10,9 @@ export default function Header() {
   const initial = (profile?.full_name || profile?.email || 'С')[0].toUpperCase()
 
   return (
-    <header className="bg-white/90 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-20">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3 min-w-0">
+    <>
+      <header className="fixed top-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 pt-[env(safe-area-inset-top,0px)]">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3 min-w-0">
         <Link to="/dashboard" className="flex items-center gap-2 shrink-0">
           <div className="w-9 h-9 bg-green-100 rounded-xl flex items-center justify-center">
             <Sprout className="w-5 h-5 text-green-600" />
@@ -75,6 +76,11 @@ export default function Header() {
           </div>
         </div>
       </div>
-    </header>
+      </header>
+      <div
+        className="h-[calc(3.25rem+env(safe-area-inset-top,0px))] sm:h-[calc(3.5rem+env(safe-area-inset-top,0px))] shrink-0"
+        aria-hidden="true"
+      />
+    </>
   )
 }
