@@ -3,9 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { getResetPasswordUrl } from '../lib/siteUrl'
 import AuthLayout from '../components/AuthLayout'
-
-const inputClass =
-  'w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500/30 focus:border-green-500 outline-none transition-colors'
+import PasswordInput, { authInputClass } from '../components/PasswordInput'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -92,12 +90,13 @@ export default function Login() {
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+          <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
           <input
+            id="login-email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className={inputClass}
+            className={authInputClass}
             placeholder="your@email.com"
             autoComplete="email"
             required
@@ -105,12 +104,11 @@ export default function Login() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Пароль</label>
-          <input
-            type="password"
+          <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-1.5">Пароль</label>
+          <PasswordInput
+            id="login-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={inputClass}
             placeholder="••••••••"
             autoComplete="current-password"
             required
@@ -148,7 +146,7 @@ export default function Login() {
             type="email"
             value={resetEmail}
             onChange={(e) => setResetEmail(e.target.value)}
-            className={inputClass}
+            className={authInputClass}
             placeholder="your@email.com"
             required
           />

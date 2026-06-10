@@ -3,9 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { toast } from '../store/toastStore'
 import AuthLayout from '../components/AuthLayout'
-
-const inputClass =
-  'w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500/30 focus:border-green-500 outline-none transition-colors'
+import PasswordInput, { authInputClass } from '../components/PasswordInput'
 
 export default function Register() {
   const navigate = useNavigate()
@@ -13,9 +11,14 @@ export default function Register() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const canSubmit = acceptedTerms && acceptedPrivacy
 
   const handleRegister = async (e) => {
     e.preventDefault()
@@ -23,8 +26,20 @@ export default function Register() {
     setError('')
     setSuccess('')
 
+    if (!acceptedTerms || !acceptedPrivacy) {
+      setError('Необходимо принять пользовательское соглашение и дать согласие на обработку персональных данных')
+      setLoading(false)
+      return
+    }
+
     if (password.length < 6) {
       setError('Пароль должен быть минимум 6 символов')
+      setLoading(false)
+      return
+    }
+
+    if (password !== passwordConfirm) {
+      setError('Пароли не совпадают')
       setLoading(false)
       return
     }
@@ -82,12 +97,13 @@ export default function Register() {
 
       <form onSubmit={handleRegister} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Имя</label>
+          <label htmlFor="reg-name" className="block text-sm font-medium text-gray-700 mb-1.5">Имя</label>
           <input
+            id="reg-name"
             type="text"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className={inputClass}
+            className={authInputClass}
             placeholder="Как вас зовут"
             autoComplete="name"
             required
@@ -95,12 +111,13 @@ export default function Register() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+          <label htmlFor="reg-email" className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
           <input
+            id="reg-email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className={inputClass}
+            className={authInputClass}
             placeholder="your@email.com"
             autoComplete="email"
             required
@@ -108,12 +125,11 @@ export default function Register() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Пароль</label>
-          <input
-            type="password"
+          <label htmlFor="reg-password" className="block text-sm font-medium text-gray-700 mb-1.5">Пароль</label>
+          <PasswordInput
+            id="reg-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={inputClass}
             placeholder="Минимум 6 символов"
             autoComplete="new-password"
             minLength={6}
@@ -121,9 +137,68 @@ export default function Register() {
           />
         </div>
 
+        <div>
+          <label htmlFor="reg-password-confirm" className="block text-sm font-medium text-gray-700 mb-1.5">
+            Повторите пароль
+          </label>
+          <PasswordInput
+            id="reg-password-confirm"
+            value={passwordConfirm}
+            onChange={(e) => setPasswordConfirm(e.target.value)}
+            placeholder="Ещё раз пароль"
+            autoComplete="new-password"
+            minLength={6}
+            required
+          />
+        </div>
+
+        <div className="space-y-3 pt-1">
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500 shrink-0"
+            />
+            <span className="text-sm text-gray-600 leading-snug">
+              Я принимаю{' '}
+              <Link
+                to="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-600 hover:text-green-700 font-medium underline underline-offset-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                пользовательское соглашение
+              </Link>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={acceptedPrivacy}
+              onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500 shrink-0"
+            />
+            <span className="text-sm text-gray-600 leading-snug">
+              Я даю{' '}
+              <Link
+                to="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-600 hover:text-green-700 font-medium underline underline-offset-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                согласие на обработку персональных данных
+              </Link>
+            </span>
+          </label>
+        </div>
+
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !canSubmit}
           className="w-full bg-green-600 text-white py-3 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50 font-medium"
         >
           {loading ? 'Регистрация...' : 'Зарегистрироваться'}
