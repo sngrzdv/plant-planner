@@ -1,9 +1,6 @@
-const STORAGE_MARKER = '/storage/v1/object/public/'
+import { resolveSupabasePublicUrl, shouldUseSupabaseProxy } from './supabaseProxy'
 
-function useImageProxy() {
-  const proxyUrl = import.meta.env.VITE_SUPABASE_PROXY_URL
-  return Boolean(proxyUrl && proxyUrl !== 'off' && proxyUrl !== 'false')
-}
+const STORAGE_MARKER = '/storage/v1/object/public/'
 
 /** Путь в Storage из любого URL (supabase.co или /supabase/...). */
 export function extractStoragePublicPath(url) {
@@ -27,8 +24,8 @@ export function toCanonicalStorageUrl(url) {
 
 /**
  * URL для <img>.
- * По умолчанию — напрямую с CDN Supabase (быстрее, чем proxy dev-сервера).
- * Прокси только если явно включён VITE_SUPABASE_PROXY_URL.
+ * На production — через /supabase (same-origin, без блокировок в РФ).
+ * Локально — напрямую с CDN Supabase.
  */
 export function resolvePlantImageUrl(url, { width, height } = {}) {
   if (!url || typeof url !== 'string') return null
@@ -37,9 +34,6 @@ export function resolvePlantImageUrl(url, { width, height } = {}) {
   const path = extractStoragePublicPath(normalized)
 
   if (path) {
-    const base = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '')
-    if (!base) return normalized
-
     if (width || height) {
       const renderPath = path.replace(STORAGE_MARKER, '/storage/v1/render/image/public/')
       const params = new URLSearchParams()
@@ -47,17 +41,10 @@ export function resolvePlantImageUrl(url, { width, height } = {}) {
       if (height) params.set('height', String(Math.round(height)))
       params.set('resize', 'cover')
       params.set('quality', '75')
-      return `${base}${renderPath}?${params}`
+      return resolveSupabasePublicUrl(`${renderPath}?${params}`)
     }
 
-    if (useImageProxy() && typeof window !== 'undefined') {
-      const proxyBase = import.meta.env.VITE_SUPABASE_PROXY_URL.startsWith('/')
-        ? import.meta.env.VITE_SUPABASE_PROXY_URL
-        : '/supabase'
-      return `${window.location.origin}${proxyBase}${path}`
-    }
-
-    return `${base}${path}`
+    return resolveSupabasePublicUrl(path)
   }
 
   if (normalized.startsWith('/supabase/') && typeof window !== 'undefined') {
@@ -79,3 +66,5 @@ export function storageObjectPath(url, bucket) {
   if (!fullPath.startsWith(prefix)) return null
   return fullPath.slice(prefix.length).split('?')[0]
 }
+
+export { shouldUseSupabaseProxy }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { extractStoragePublicPath, resolvePlantImageUrl } from './plantImageUrl'
+import { resolveSupabaseClientUrl, shouldUseSupabaseProxy } from './supabaseProxy'
 
 describe('plantImageUrl', () => {
   beforeEach(() => {
@@ -17,7 +18,7 @@ describe('plantImageUrl', () => {
     expect(extractStoragePublicPath(null)).toBeNull()
   })
 
-  it('resolves storage URL directly to supabase CDN by default', () => {
+  it('resolves storage URL directly in dev', () => {
     const url = 'https://abc.supabase.co/storage/v1/object/public/plant-images/foo.jpg'
     expect(resolvePlantImageUrl(url)).toBe(
       'https://abc.supabase.co/storage/v1/object/public/plant-images/foo.jpg',
@@ -29,5 +30,18 @@ describe('plantImageUrl', () => {
     expect(resolvePlantImageUrl(url, { width: 400, height: 176 })).toBe(
       'https://abc.supabase.co/storage/v1/render/image/public/plant-images/foo.jpg?width=400&height=176&resize=cover&quality=75',
     )
+  })
+})
+
+describe('supabaseProxy', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { location: { origin: 'https://app.vercel.app' } })
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://abc.supabase.co')
+    vi.stubEnv('VITE_SUPABASE_PROXY_URL', '/supabase')
+  })
+
+  it('uses same-origin proxy when enabled', () => {
+    expect(shouldUseSupabaseProxy()).toBe(true)
+    expect(resolveSupabaseClientUrl()).toBe('https://app.vercel.app/supabase')
   })
 })

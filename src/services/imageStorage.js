@@ -1,32 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { toCanonicalStorageUrl } from '../lib/plantImageUrl'
-import { getSupabaseAuthConfig } from '../lib/supabaseAuthConfig'
 
 const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'webp', 'gif']
 const MAX_BYTES = 5 * 1024 * 1024
 const RETRY_MS = [0, 800, 1600]
 
-let directClient = null
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function usesProxy() {
-  const proxy = import.meta.env.VITE_SUPABASE_PROXY_URL
-  return Boolean(proxy && proxy !== '0' && proxy !== 'false')
-}
-
-function getDirectClient() {
-  if (directClient) return directClient
-  const url = import.meta.env.VITE_SUPABASE_URL
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY
-  if (!url || !key) return null
-  directClient = createClient(url, key, {
-    auth: getSupabaseAuthConfig(),
-  })
-  return directClient
 }
 
 function isNetworkError(error) {
@@ -42,7 +22,7 @@ function formatStorageError(error, bucket) {
     .join(' — ')
   if (isNetworkError(error)) {
     return new Error(
-      'Нет связи с Supabase Storage. Перезапустите npm run dev или попробуйте загрузку на Vercel / через VPN.'
+      'Нет связи с Supabase Storage. Проверьте интернет или попробуйте позже.'
     )
   }
   if (/bucket not found|not found/i.test(raw)) {
@@ -100,49 +80,34 @@ async function tryUpload(client, bucket, path, file, options) {
   return { publicUrl: toCanonicalStorageUrl(urlData.publicUrl) }
 }
 
-/**
- * Загрузка в Storage: прокси (основной) → повторы → прямой URL Supabase (fallback).
- */
+/** Загрузка в Storage (на prod — через /supabase proxy). */
 export async function uploadImage(file, bucket, { path, upsert = true, cacheControl = '31536000' } = {}) {
-  const ext = validateImageFile(file)
+  validateImageFile(file)
   if (!path) {
     throw new Error('Не указан путь файла в Storage')
   }
 
-  const session = await getSessionOrThrow()
+  await getSessionOrThrow()
 
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
   const options = {
     cacheControl,
     upsert,
     contentType: contentType(file, ext),
   }
 
-  const clients = [{ client: supabase, label: 'proxy' }]
-  if (usesProxy()) {
-    const direct = getDirectClient()
-    if (direct) {
-      await direct.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      })
-      clients.push({ client: direct, label: 'direct' })
-    }
-  }
-
   let lastError = null
 
-  for (const { client } of clients) {
-    for (const delay of RETRY_MS) {
-      if (delay > 0) await sleep(delay)
-      try {
-        const result = await tryUpload(client, bucket, path, file, options)
-        if (result.publicUrl) return result.publicUrl
-        lastError = result.error
-        if (!isNetworkError(result.error)) break
-      } catch (err) {
-        lastError = err
-        if (!isNetworkError(err)) break
-      }
+  for (const delay of RETRY_MS) {
+    if (delay > 0) await sleep(delay)
+    try {
+      const result = await tryUpload(supabase, bucket, path, file, options)
+      if (result.publicUrl) return result.publicUrl
+      lastError = result.error
+      if (!isNetworkError(result.error)) break
+    } catch (err) {
+      lastError = err
+      if (!isNetworkError(err)) break
     }
   }
 
