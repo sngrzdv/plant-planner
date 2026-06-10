@@ -17,7 +17,7 @@ export default function Header() {
           <div className="w-9 h-9 bg-green-100 rounded-xl flex items-center justify-center">
             <Sprout className="w-5 h-5 text-green-600" />
           </div>
-          <span className="hidden lg:inline text-lg font-semibold text-gray-800">Plant Planner</span>
+          <span className="hidden lg:inline text-lg font-semibold text-gray-800">Мой огород</span>
         </Link>
 
         <nav className="hidden md:flex flex-1 items-center justify-center gap-0.5 lg:gap-1 min-w-0 overflow-x-auto">

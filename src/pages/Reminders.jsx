@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -16,6 +16,7 @@ import { notificationService } from '../services/notificationService'
 import { reminderService } from '../services/reminderService'
 import { confirm } from '../store/confirmStore'
 import { useReferenceStore } from '../store/referenceStore'
+import { fetchBoardReminders, attachPlantsToReminders } from '../services/remindersBoardService'
 
 function isPendingReminder(reminder) {
   return !reminder.status || reminder.status === 'pending'
@@ -26,12 +27,55 @@ function isTransientFetchError(error) {
   return /failed to fetch|network|chunked|aborted|timeout/.test(message)
 }
 
-async function fetchReminders(userId) {
-  return supabase
-    .from('reminders')
-    .select('id, user_id, title, type, due_date, status, plant_id, source, created_at')
-    .eq('user_id', userId)
-    .order('due_date', { ascending: true })
+async function fetchRemindersWithRetry(userId) {
+  let lastError = null
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await fetchBoardReminders(userId)
+    if (!result.error) return result
+    lastError = result.error
+    if (!isTransientFetchError(result.error) || attempt === 1) break
+    await delay(300)
+  }
+  return { data: null, error: lastError }
+}
+
+function buildRemindersByDate(reminders) {
+  const map = new Map()
+  for (const reminder of reminders) {
+    const bucket = map.get(reminder.due_date)
+    if (bucket) bucket.push(reminder)
+    else map.set(reminder.due_date, [reminder])
+  }
+  return map
+}
+
+function buildCalendarDays(calYear, calMonth, today, remindersByDate) {
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
+  const firstDay = new Date(calYear, calMonth, 1).getDay() || 7
+  const grid = []
+
+  for (let i = 1; i < firstDay; i++) grid.push(null)
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const dayReminders = remindersByDate.get(dateStr) || []
+    const pending = dayReminders.filter(isPendingReminder).length
+    const completed = dayReminders.filter((r) => r.status === 'completed').length
+    const date = new Date(calYear, calMonth, d)
+    const moonEmoji = getMoonEmoji(date)
+
+    grid.push({
+      day: d,
+      date: dateStr,
+      fullDate: date,
+      reminders: dayReminders,
+      pending,
+      completed,
+      isToday: dateStr === today,
+      moonEmoji,
+    })
+  }
+  return grid
 }
 
 function delay(ms) {
@@ -113,16 +157,10 @@ export default function Reminders() {
     try {
       const userId = user.id
 
-      let data = null
-      let error = null
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const result = await fetchReminders(userId)
-        data = result.data
-        error = result.error
-        if (!error) break
-        if (!isTransientFetchError(error) || attempt === 1) break
-        await delay(300)
-      }
+      const [{ data, error }, plantsList] = await Promise.all([
+        fetchRemindersWithRetry(userId),
+        useReferenceStore.getState().getPlants().catch(() => []),
+      ])
 
       if (error) {
         console.error('Reminders load error:', error)
@@ -131,20 +169,7 @@ export default function Reminders() {
         return
       }
 
-      const rows = data || []
-      setReminders(rows.map((reminder) => ({ ...reminder, plants: null })))
-
-      if (!rows.length) return
-
-      void useReferenceStore.getState().getPlants().then((plantsList) => {
-        const plantById = new Map((plantsList || []).map((plant) => [plant.id, plant]))
-        setReminders((current) =>
-          current.map((reminder) => ({
-            ...reminder,
-            plants: reminder.plant_id ? plantById.get(reminder.plant_id) || null : null,
-          }))
-        )
-      })
+      setReminders(attachPlantsToReminders(data || [], plantsList))
     } catch (err) {
       console.error('Reminders load error:', err)
       setLoadError(formatLoadError(err))
@@ -311,7 +336,7 @@ export default function Reminders() {
     }
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = useMemo(() => new Date().toISOString().split('T')[0], [])
 
   useEffect(() => {
     if (loading || boardTabInitialized.current) return
@@ -326,13 +351,35 @@ export default function Reminders() {
     if (view !== 'calendar') return
     setSelectedDate((current) => current || today)
   }, [view, today])
-  
-  const groupedByStatus = {
-    overdue: reminders.filter(r => isPendingReminder(r) && r.due_date < today),
-    today: reminders.filter(r => isPendingReminder(r) && r.due_date === today),
-    upcoming: reminders.filter(r => isPendingReminder(r) && r.due_date > today),
-    completed: reminders.filter(r => r.status === 'completed'),
-  }
+
+  const groupedByStatus = useMemo(() => ({
+    overdue: reminders.filter((r) => isPendingReminder(r) && r.due_date < today),
+    today: reminders.filter((r) => isPendingReminder(r) && r.due_date === today),
+    upcoming: reminders.filter((r) => isPendingReminder(r) && r.due_date > today),
+    completed: reminders.filter((r) => r.status === 'completed'),
+  }), [reminders, today])
+
+  const remindersByDate = useMemo(() => buildRemindersByDate(reminders), [reminders])
+
+  const stats = useMemo(() => ({
+    total: reminders.length,
+    completed: groupedByStatus.completed.length,
+    pending: reminders.filter(isPendingReminder).length,
+    overdue: groupedByStatus.overdue.length,
+    completionRate: reminders.length > 0
+      ? Math.round((groupedByStatus.completed.length / reminders.length) * 100)
+      : 0,
+  }), [reminders, groupedByStatus])
+
+  const calendarDays = useMemo(
+    () => buildCalendarDays(calYear, calMonth, today, remindersByDate),
+    [calYear, calMonth, today, remindersByDate],
+  )
+
+  const selectedDayReminders = useMemo(
+    () => (selectedDate ? remindersByDate.get(selectedDate) || [] : []),
+    [selectedDate, remindersByDate],
+  )
 
   function getColumnItems(columnId, limit = 10) {
     const all = groupedByStatus[columnId] || []
@@ -366,6 +413,7 @@ export default function Reminders() {
             <PlantImage
               src={r.plants.image_url}
               alt={r.plants.name}
+              size="thumb"
               className="w-5 h-5 rounded-full object-cover"
               fallbackClassName="w-5 h-5 rounded-full"
               compact
@@ -451,49 +499,6 @@ export default function Reminders() {
       </div>
     )
   }
-
-  const stats = {
-    total: reminders.length,
-    completed: groupedByStatus.completed.length,
-    pending: reminders.filter(isPendingReminder).length,
-    overdue: groupedByStatus.overdue.length,
-    completionRate: reminders.length > 0 ? Math.round((groupedByStatus.completed.length / reminders.length) * 100) : 0
-  }
-
-  // Красивая сетка календаря
-  function getCalendarDays() {
-    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
-    const firstDay = new Date(calYear, calMonth, 1).getDay() || 7
-    const grid = []
-    
-    for (let i = 1; i < firstDay; i++) grid.push(null)
-    
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-      const dayReminders = reminders.filter(r => r.due_date === dateStr)
-      const pending = dayReminders.filter(isPendingReminder).length
-      const completed = dayReminders.filter(r => r.status === 'completed').length
-      const date = new Date(calYear, calMonth, d)
-      const moonEmoji = getMoonEmoji(date)
-      
-      grid.push({
-        day: d,
-        date: dateStr,
-        fullDate: date,
-        reminders: dayReminders,
-        pending,
-        completed,
-        isToday: dateStr === today,
-        moonEmoji: moonEmoji
-      })
-    }
-    return grid
-  }
-
-  const calendarDays = getCalendarDays()
-  const selectedDayReminders = selectedDate 
-    ? reminders.filter(r => r.due_date === selectedDate)
-    : []
 
   function getPlantTimeline(plant) {
     if (!plant?.maturation_days) return []

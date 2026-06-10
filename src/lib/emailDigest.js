@@ -1,6 +1,6 @@
 /** Текст дайджеста задач для mailto и email. */
 export function buildDigestLines({ overdue = [], today = [] }) {
-  const lines = ['Plant Planner — напоминание о задачах', '']
+  const lines = ['Мой огород — напоминание о задачах', '']
   if (overdue.length) {
     lines.push(`Просрочено (${overdue.length}):`)
     overdue.slice(0, 10).forEach((t) => lines.push(`  • ${t.title}${t.due_date ? ` (${t.due_date})` : ''}`))
@@ -19,9 +19,9 @@ export function buildDigestLines({ overdue = [], today = [] }) {
 }
 
 export function buildDigestSubject({ overdue = [], today = [] }) {
-  if (overdue.length) return `Plant Planner: ${overdue.length} просроченных задач`
-  if (today.length) return `Plant Planner: ${today.length} задач на сегодня`
-  return 'Plant Planner: задачи в порядке'
+  if (overdue.length) return `Мой огород: ${overdue.length} просроченных задач`
+  if (today.length) return `Мой огород: ${today.length} задач на сегодня`
+  return 'Мой огород: задачи в порядке'
 }
 
 /** Ссылка mailto с дайджестом задач (работает без серверной отправки). */

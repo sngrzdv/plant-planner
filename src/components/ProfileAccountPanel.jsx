@@ -93,7 +93,7 @@ export default function ProfileAccountPanel({
 
       <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-red-100">
         <h3 className="font-semibold text-gray-800 mb-2">Выход из аккаунта</h3>
-        <p className="text-sm text-gray-500 mb-4">Вы выйдете из Plant Planner на этом устройстве.</p>
+        <p className="text-sm text-gray-500 mb-4">Вы выйдете из приложения «Мой огород» на этом устройстве.</p>
         <button
           type="button"
           onClick={onSignOut}

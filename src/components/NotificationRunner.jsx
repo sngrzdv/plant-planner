@@ -53,10 +53,11 @@ export default function NotificationRunner() {
       await trySendEmailDigest(profile, reminders)
     }
 
-    tick()
+    const initialDelay = setTimeout(tick, 3000)
     const interval = setInterval(tick, 10 * 60 * 1000)
     return () => {
       cancelled = true
+      clearTimeout(initialDelay)
       clearInterval(interval)
     }
   }, [

@@ -1,7 +1,7 @@
 {
-  "name": "Plant Planner",
-  "short_name": "Plant Planner",
-  "description": "Планировщик сада, рассада и задачи по уходу",
+  "name": "Мой огород",
+  "short_name": "Мой огород",
+  "description": "Планировщик участка, рассада и задачи по уходу",
   "icons": [
     {
       "src": "/icon-192.png",

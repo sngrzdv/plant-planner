@@ -116,10 +116,13 @@ function App() {
         await supabase.auth.signOut()
         setUser(null)
         setProfile(null)
+        return
       }
 
-      // Справочники грузятся по требованию на страницах, чтобы не создавать
-      // лишнюю пачку сетевых запросов сразу после входа.
+      // Каталог подгружаем в фоне — не блокирует главную (там только count).
+      window.setTimeout(() => {
+        useReferenceStore.getState().preloadReferences()
+      }, 4000)
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -209,7 +212,7 @@ function Dashboard() {
           safeSupabaseQuery(supabase.from('layouts').select('id', { count: 'exact', head: true }).eq('user_id', userId), { count: 0 }),
           safeSupabaseQuery(supabase.from('pots').select('id', { count: 'exact', head: true }).eq('status', 'growing').eq('user_id', userId), { count: 0 }),
         ]),
-        useReferenceStore.getState().getPlants().catch(() => []),
+        useReferenceStore.getState().getPlantsCount().catch(() => 0),
         fetchPendingReminders(userId).catch(() => []),
       ])
 
@@ -226,7 +229,7 @@ function Dashboard() {
         gardens: gardens || 0,
         pots: pots || 0,
         tasks: pending.length,
-        catalog: catalogPlants?.length || 0,
+        catalog: catalogPlants || 0,
       })
       setTodayTasks(pickTodayTasks(pending, today))
       setPendingReminders(pending)

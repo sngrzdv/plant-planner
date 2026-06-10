@@ -12,7 +12,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
               <Sprout className="w-7 h-7 text-white" />
             </div>
             <div>
-              <p className="text-lg font-bold leading-tight">Plant Planner</p>
+              <p className="text-lg font-bold leading-tight">Мой огород</p>
               <p className="text-sm text-green-100 mt-1">{subtitle}</p>
             </div>
           </Link>

@@ -1,5 +1,10 @@
 const STORAGE_MARKER = '/storage/v1/object/public/'
 
+function useImageProxy() {
+  const proxyUrl = import.meta.env.VITE_SUPABASE_PROXY_URL
+  return Boolean(proxyUrl && proxyUrl !== 'off' && proxyUrl !== 'false')
+}
+
 /** Путь в Storage из любого URL (supabase.co или /supabase/...). */
 export function extractStoragePublicPath(url) {
   if (!url || typeof url !== 'string') return null
@@ -20,19 +25,42 @@ export function toCanonicalStorageUrl(url) {
   return `${base}${path}`
 }
 
-/** URL для <img>: same-origin прокси /supabase. */
-export function resolvePlantImageUrl(url) {
+/**
+ * URL для <img>.
+ * По умолчанию — напрямую с CDN Supabase (быстрее, чем proxy dev-сервера).
+ * Прокси только если явно включён VITE_SUPABASE_PROXY_URL.
+ */
+export function resolvePlantImageUrl(url, { width, height } = {}) {
   if (!url || typeof url !== 'string') return null
 
-  // Старые записи после бага с двойным /supabase
   const normalized = url.replace(/\/supabase\/supabase\//g, '/supabase/')
-
   const path = extractStoragePublicPath(normalized)
+
   if (path) {
-    return `${window.location.origin}/supabase${path}`
+    const base = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '')
+    if (!base) return normalized
+
+    if (width || height) {
+      const renderPath = path.replace(STORAGE_MARKER, '/storage/v1/render/image/public/')
+      const params = new URLSearchParams()
+      if (width) params.set('width', String(Math.round(width)))
+      if (height) params.set('height', String(Math.round(height)))
+      params.set('resize', 'cover')
+      params.set('quality', '75')
+      return `${base}${renderPath}?${params}`
+    }
+
+    if (useImageProxy() && typeof window !== 'undefined') {
+      const proxyBase = import.meta.env.VITE_SUPABASE_PROXY_URL.startsWith('/')
+        ? import.meta.env.VITE_SUPABASE_PROXY_URL
+        : '/supabase'
+      return `${window.location.origin}${proxyBase}${path}`
+    }
+
+    return `${base}${path}`
   }
 
-  if (normalized.startsWith('/supabase/')) {
+  if (normalized.startsWith('/supabase/') && typeof window !== 'undefined') {
     return `${window.location.origin}${normalized}`
   }
 

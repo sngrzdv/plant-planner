@@ -1,6 +1,18 @@
 const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY
 const WEATHER_TTL_MS = 10 * 60 * 1000
 const CACHE_PREFIX = 'weatherCache:'
+const inFlightRequests = new Map()
+
+function dedupeRequest(key, factory) {
+  if (inFlightRequests.has(key)) {
+    return inFlightRequests.get(key)
+  }
+  const request = factory().finally(() => {
+    inFlightRequests.delete(key)
+  })
+  inFlightRequests.set(key, request)
+  return request
+}
 
 function getCachedWeather(key) {
   try {
@@ -43,18 +55,20 @@ export const weatherApi = {
     const cacheKey = `coords:${lat.toFixed(2)}:${lon.toFixed(2)}`
     const cached = getCachedWeather(cacheKey)
     if (cached) return cached
-    try {
-      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&lang=ru&appid=${API_KEY}&units=metric`
-      const response = await fetchWithTimeout(url)
-      if (!response.ok) throw new Error('Ошибка')
-      const data = await response.json()
-      const formatted = this.formatWeather(data)
-      setCachedWeather(cacheKey, formatted)
-      return formatted
-    } catch (err) {
-      console.debug('Ошибка погоды:', err)
-      return null
-    }
+    return dedupeRequest(cacheKey, async () => {
+      try {
+        const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&lang=ru&appid=${API_KEY}&units=metric`
+        const response = await fetchWithTimeout(url)
+        if (!response.ok) throw new Error('Ошибка')
+        const data = await response.json()
+        const formatted = this.formatWeather(data)
+        setCachedWeather(cacheKey, formatted)
+        return formatted
+      } catch (err) {
+        console.debug('Ошибка погоды:', err)
+        return null
+      }
+    })
   },
 
   // Получить погоду по названию города
@@ -64,18 +78,20 @@ export const weatherApi = {
     const cacheKey = `city:${cityKey}`
     const cached = getCachedWeather(cacheKey)
     if (cached) return cached
-    try {
-      const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&lang=ru&appid=${API_KEY}&units=metric`
-      const response = await fetchWithTimeout(url)
-      if (!response.ok) throw new Error('Город не найден')
-      const data = await response.json()
-      const formatted = this.formatWeather(data)
-      setCachedWeather(cacheKey, formatted)
-      return formatted
-    } catch (err) {
-      console.debug('Ошибка погоды:', err)
-      return null
-    }
+    return dedupeRequest(cacheKey, async () => {
+      try {
+        const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&lang=ru&appid=${API_KEY}&units=metric`
+        const response = await fetchWithTimeout(url)
+        if (!response.ok) throw new Error('Город не найден')
+        const data = await response.json()
+        const formatted = this.formatWeather(data)
+        setCachedWeather(cacheKey, formatted)
+        return formatted
+      } catch (err) {
+        console.debug('Ошибка погоды:', err)
+        return null
+      }
+    })
   },
 
   // Умная загрузка: сначала геолокация, потом город по умолчанию

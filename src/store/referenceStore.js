@@ -17,6 +17,23 @@ export const useReferenceStore = create((set, get) => ({
   plantsRequest: null,
   categoriesRequest: null,
 
+  getPlantsCount: async ({ force = false } = {}) => {
+    const state = get()
+    if (!force && state.plants.length > 0 && isFresh(state.plantsLoadedAt)) {
+      return state.plants.length
+    }
+
+    const { count, error } = await supabase
+      .from('plants')
+      .select('id', { count: 'exact', head: true })
+
+    if (error) {
+      console.warn('Plants count fetch failed:', error.message)
+      return state.plants.length || 0
+    }
+    return count || 0
+  },
+
   getPlants: async ({ force = false } = {}) => {
     const state = get()
     if (!force && state.plants.length > 0 && isFresh(state.plantsLoadedAt)) {

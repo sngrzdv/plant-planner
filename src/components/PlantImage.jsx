@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react'
 import { ImageOff } from 'lucide-react'
 import { resolvePlantImageUrl } from '../lib/plantImageUrl'
 
+const SIZE_PRESETS = {
+  thumb: { width: 64, height: 64 },
+  card: { width: 400, height: 176 },
+  detail: { width: 800, height: 600 },
+}
+
 function NoPhotoPlaceholder({ className, label = 'Нет фото', compact = false }) {
   return (
     <div
@@ -30,13 +36,17 @@ export default function PlantImage({
   fallbackClassName = '',
   fallbackLabel = 'Нет фото',
   compact = false,
+  size,
 }) {
   const [failed, setFailed] = useState(false)
-  const resolved = resolvePlantImageUrl(src)
+  const [useFullSize, setUseFullSize] = useState(false)
+  const dimensions = size ? SIZE_PRESETS[size] : null
+  const resolved = resolvePlantImageUrl(src, useFullSize ? {} : (dimensions || {}))
 
   useEffect(() => {
     setFailed(false)
-  }, [src])
+    setUseFullSize(false)
+  }, [src, size])
 
   if (!resolved || failed) {
     return (
@@ -55,7 +65,16 @@ export default function PlantImage({
       className={className}
       loading="lazy"
       decoding="async"
-      onError={() => setFailed(true)}
+      fetchPriority="low"
+      width={dimensions?.width}
+      height={dimensions?.height}
+      onError={() => {
+        if (dimensions && !useFullSize) {
+          setUseFullSize(true)
+          return
+        }
+        setFailed(true)
+      }}
     />
   )
 }

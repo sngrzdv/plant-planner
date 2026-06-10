@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -41,29 +41,46 @@ export default function PlantsCatalog() {
     planting_method: 'direct', days_to_transplant: 0, days_to_harvest: 60
   })
   
+  const applyCatalogData = useCallback((plantsData, categoriesData) => {
+    setCategories(categoriesData || [])
+    const categoryById = new Map((categoriesData || []).map((c) => [c.id, c]))
+    setPlants(
+      (plantsData || []).map((plant) => ({
+        ...plant,
+        category: categoryById.get(plant.category_id) || null,
+      }))
+    )
+  }, [])
+
   const loadData = useCallback(async () => {
     setLoadError('')
+    const store = useReferenceStore.getState()
+    const cacheFresh =
+      store.plants.length > 0 &&
+      Date.now() - store.plantsLoadedAt < 30 * 60 * 1000
+
+    if (cacheFresh) {
+      applyCatalogData(store.plants, store.categories)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+
     try {
       const [plantsData, categoriesData] = await Promise.all([
         useReferenceStore.getState().getPlants(),
         useReferenceStore.getState().getCategories(),
       ])
-
-      setCategories(categoriesData || [])
-      const categoryById = new Map((categoriesData || []).map((c) => [c.id, c]))
-      setPlants(
-        (plantsData || []).map((plant) => ({
-          ...plant,
-          category: categoryById.get(plant.category_id) || null,
-        }))
-      )
+      applyCatalogData(plantsData, categoriesData)
     } catch (err) {
-      setLoadError(err.message || 'Не удалось загрузить каталог')
-      setPlants([])
-      setCategories([])
+      if (!cacheFresh) {
+        setLoadError(err.message || 'Не удалось загрузить каталог')
+        setPlants([])
+        setCategories([])
+      }
     }
     setLoading(false)
-  }, [])
+  }, [applyCatalogData])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -170,13 +187,13 @@ export default function PlantsCatalog() {
     toast.success('Растение удалено')
   }
   
-  const filteredPlants = plants.filter(plant => {
+  const filteredPlants = useMemo(() => plants.filter(plant => {
     const matchesSearch = plant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           plant.description?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = !selectedCategory || plant.category_id === selectedCategory
     const matchesFavorites = catalogFilter !== 'favorites' || favoriteIds.has(plant.id)
     return matchesSearch && matchesCategory && matchesFavorites
-  })
+  }), [plants, searchTerm, selectedCategory, catalogFilter, favoriteIds])
   
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -293,6 +310,7 @@ export default function PlantsCatalog() {
                     <PlantImage
                       src={plant.image_url}
                       alt={plant.name}
+                      size="card"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       fallbackClassName="w-full h-full"
                     />

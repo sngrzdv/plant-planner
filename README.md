@@ -1,6 +1,6 @@
-# Plant Planner
+# Мой огород
 
-Веб-приложение для планирования сада: участки, грядки, рассада, каталог растений, напоминания и лунный календарь.
+Веб-приложение для планирования участка: грядки, рассада, каталог растений, напоминания и лунный календарь.
 
 **Production:** https://plant-planner-nu.vercel.app
 
@@ -52,7 +52,7 @@ update public.profiles set role_id = 2 where email = 'ваш@email.com';
 2. Задеплойте Edge Function:
    ```bash
    supabase functions deploy send-email-digest
-   supabase secrets set RESEND_API_KEY=re_xxx DIGEST_FROM_EMAIL="Plant Planner <noreply@yourdomain.com>"
+   supabase secrets set RESEND_API_KEY=re_xxx DIGEST_FROM_EMAIL="Мой огород <noreply@yourdomain.com>"
    ```
 3. В профиле включите **Email-напоминания**
 

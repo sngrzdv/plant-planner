@@ -114,7 +114,7 @@ export async function exportSeasonReportExcel(report) {
   const workbook = XLSX.utils.book_new()
 
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
-    ['Plant Planner — сезонная статистика'],
+    ['Мой огород — сезонная статистика'],
     [`Садовод: ${report.userName || '—'}`],
     [`Сезон: ${report.seasonYear}`],
     [`Дата формирования: ${formatDateRu(report.generatedAt)}`],
@@ -218,7 +218,7 @@ function buildWordHtml(report) {
   <h2>Журнал сезона</h2>
   <ul>${journalList || '<li>Нет событий</li>'}</ul>
 
-  <p class="meta">Plant Planner — отчёт сформирован автоматически по посадкам на грядках, журналу и задачам.</p>
+  <p class="meta">Мой огород — отчёт сформирован автоматически по посадкам на грядках, журналу и задачам.</p>
 </body>
 </html>`
 }
@@ -341,7 +341,7 @@ function buildPngSnapshotElement(report) {
     <div style="background:#ffffff;border-radius:16px;padding:20px;border:1px solid #e5e7eb;">
       <h2 style="margin:0 0 12px;font-size:16px;color:#4338ca;">Журнал сезона</h2>
       <ul style="margin:0;padding-left:18px;">${journalItems || '<li style="color:#9ca3af;">Нет событий</li>'}</ul>
-      <p style="margin:16px 0 0;font-size:11px;color:#9ca3af;">Plant Planner — отчёт по посадкам, журналу и задачам</p>
+      <p style="margin:16px 0 0;font-size:11px;color:#9ca3af;">Мой огород — отчёт по посадкам, журналу и задачам</p>
     </div>
   `
 
