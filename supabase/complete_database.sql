@@ -213,7 +213,7 @@ create table if not exists public.plants_on_beds (
   planted_date date default current_date,
   stage text default 'seedling' check (stage in ('seed', 'seedling', 'adult', 'harvesting', 'harvested')),
   source_type text check (source_type in ('pot', 'seed', 'seedling_direct')),
-  source_pot_id uuid references public.pots (id),
+  source_pot_id uuid references public.pots (id) on delete set null,
   quantity integer default 1,
   notes text,
   created_at timestamptz not null default now(),
@@ -224,7 +224,7 @@ create table if not exists public.garden_journal (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   plant_id bigint references public.plants (id),
-  pot_id uuid references public.pots (id),
+  pot_id uuid references public.pots (id) on delete set null,
   action text,
   details text,
   created_at timestamptz not null default now()
@@ -241,7 +241,7 @@ create table if not exists public.reminders (
   description text,
   plant_id bigint references public.plants (id),
   bed_id uuid references public.beds (id),
-  pot_id uuid references public.pots (id),
+  pot_id uuid references public.pots (id) on delete set null,
   due_date date not null,
   due_time time,
   status text default 'pending' check (status in ('pending', 'completed', 'missed', 'cancelled')),
@@ -287,7 +287,7 @@ create table if not exists public.plant_submissions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   status text not null default 'pending'
-    check (status in ('pending', 'approved', 'rejected')),
+    check (status in ('pending', 'in_review', 'approved', 'rejected')),
   admin_comment text,
   reviewed_at timestamptz,
   name text not null,
@@ -304,6 +304,13 @@ create table if not exists public.plant_submissions (
   image_url text,
   created_at timestamptz not null default now()
 );
+
+alter table public.user_plants
+  add column if not exists catalog_plant_id bigint references public.plants (id) on delete set null;
+alter table public.user_plants
+  add column if not exists published_at timestamptz;
+alter table public.user_plants
+  add column if not exists source_submission_id uuid references public.plant_submissions (id) on delete set null;
 
 alter table public.garden_journal
   add column if not exists user_plant_id uuid references public.user_plants (id) on delete set null;
@@ -339,6 +346,12 @@ create index if not exists idx_reminders_user_status on public.reminders (user_i
 create index if not exists idx_garden_journal_user_id on public.garden_journal (user_id);
 create index if not exists idx_plants_category_id on public.plants (category_id);
 create index if not exists idx_user_plants_user_id on public.user_plants (user_id);
+create unique index if not exists idx_user_plants_source_submission
+  on public.user_plants (source_submission_id)
+  where source_submission_id is not null;
+create index if not exists idx_user_plants_catalog_plant
+  on public.user_plants (catalog_plant_id)
+  where catalog_plant_id is not null;
 create index if not exists idx_plant_submissions_user_status on public.plant_submissions (user_id, status);
 create index if not exists idx_plant_submissions_pending on public.plant_submissions (status) where status = 'pending';
 create index if not exists idx_plant_favorites_user on public.plant_favorites (user_id);
@@ -365,6 +378,32 @@ $$;
 
 revoke all on function public.is_admin(uuid) from public;
 grant execute on function public.is_admin(uuid) to authenticated;
+
+create or replace function public.delete_own_account()
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'Необходима авторизация';
+  end if;
+
+  delete from auth.users where id = uid;
+
+  if not found then
+    raise exception 'Пользователь не найден';
+  end if;
+end;
+$$;
+
+revoke all on function public.delete_own_account() from public;
+grant execute on function public.delete_own_account() to authenticated;
+
+notify pgrst, 'reload schema';
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -639,6 +678,22 @@ create policy user_plants_update_own on public.user_plants
 drop policy if exists user_plants_delete_own on public.user_plants;
 create policy user_plants_delete_own on public.user_plants
   for delete to authenticated using (user_id = auth.uid());
+
+drop policy if exists user_plants_admin_insert on public.user_plants;
+create policy user_plants_admin_insert on public.user_plants
+  for insert to authenticated
+  with check (public.is_admin(auth.uid()));
+
+drop policy if exists user_plants_admin_update on public.user_plants;
+create policy user_plants_admin_update on public.user_plants
+  for update to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+drop policy if exists user_plants_admin_select on public.user_plants;
+create policy user_plants_admin_select on public.user_plants
+  for select to authenticated
+  using (public.is_admin(auth.uid()));
 
 -- plant_submissions
 drop policy if exists plant_submissions_select_own on public.plant_submissions;

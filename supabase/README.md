@@ -44,3 +44,16 @@ plant_categories → plants
 ## Edge Function (опционально)
 
 Email-дайджест: `functions/send-email-digest/`
+
+## Дополнительные миграции (существующий проект)
+
+Если база уже развёрнута из старой версии `complete_database.sql`, выполните по необходимости:
+
+| Файл | Зачем |
+|---|---|
+| [`delete_own_account.sql`](./delete_own_account.sql) | **Удаление аккаунта** в профиле (без этого — ошибка «не настроена на сервере») |
+| [`user_plants_extensions.sql`](./user_plants_extensions.sql) | Посадка растений из личного дневника |
+| [`user_plants_published.sql`](./user_plants_published.sql) | Метка «Опубликовано» после одобрения заявки |
+| [`pots_journal_fk.sql`](./pots_journal_fk.sql) | Удаление рассады без ошибки FK журнала |
+
+После каждого скрипта в SQL Editor нажмите **Run**. Функция `delete_own_account` подхватится сразу (в скрипте есть `notify pgrst, 'reload schema'`).

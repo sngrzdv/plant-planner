@@ -1,13 +1,13 @@
 import { weatherApi } from './services/weatherApi'
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom'
-import { createElement, lazy, Suspense, useEffect, useState } from 'react'
+import { createElement, lazy, Suspense, useEffect, useState, useRef } from 'react'
 import NotificationRunner from './components/NotificationRunner'
 import PageNotFound from './components/PageNotFound'
 import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
 import { 
   LayoutGrid, Flower, Calendar, 
-  CheckCircle, BookOpen, CloudRain, Droplets, Wind, Leaf, Sprout, Zap
+  CheckCircle, BookOpen, CloudRain, Droplets, Wind, Leaf, Sprout, Zap, Sparkles
 } from 'lucide-react'
 import Header from './components/Header'
 import EmailDigestBanner from './components/EmailDigestBanner'
@@ -27,7 +27,7 @@ import MobileNav from './components/MobileNav'
 import ToastContainer from './components/ToastContainer'
 import ConfirmDialog from './components/ConfirmDialog'
 import AppOnboarding from './components/AppOnboarding'
-import { hasCompletedOnboarding } from './lib/onboardingStorage'
+import { hasCompletedOnboarding, hasSeenWelcome, markWelcomeSeen } from './lib/onboardingStorage'
 
 const MyGardens = lazy(() => import('./pages/MyGardens'))
 const GardenEditor = lazy(() => import('./pages/GardenEditor'))
@@ -36,6 +36,7 @@ const BedEditor = lazy(() => import('./pages/BedEditor'))
 const PlantsCatalog = lazy(() => import('./pages/PlantsCatalog'))
 const PlantDetail = lazy(() => import('./pages/PlantDetail'))
 const Pots = lazy(() => import('./pages/Pots'))
+const PotsJournal = lazy(() => import('./pages/PotsJournal'))
 const Reminders = lazy(() => import('./pages/Reminders'))
 const LunarCalendar = lazy(() => import('./pages/LunarCalendar'))
 const AdminPanel = lazy(() => import('./pages/AdminPanel'))
@@ -163,6 +164,7 @@ function App() {
         <Route path="/catalog" element={<LazyPage><PlantsCatalog /></LazyPage>} />
         <Route path="/plant/:id" element={<LazyPage><PlantDetail /></LazyPage>} />
         <Route path="/pots" element={<LazyPage><Pots /></LazyPage>} />
+        <Route path="/pots/journal" element={<LazyPage><PotsJournal /></LazyPage>} />
         <Route path="/reminders" element={<LazyPage><Reminders /></LazyPage>} />
         <Route path="/lunar" element={<LazyPage><LunarCalendar /></LazyPage>} />
         <Route path="/admin" element={<LazyPage><AdminPanel /></LazyPage>} />
@@ -201,6 +203,25 @@ function Dashboard() {
   const [loadingTasks, setLoadingTasks] = useState(true)
   const [completingTask, setCompletingTask] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const welcomeStateRef = useRef({ userId: null, isFirst: false, marked: false })
+
+  if (userId && welcomeStateRef.current.userId !== userId) {
+    welcomeStateRef.current = {
+      userId,
+      isFirst: !hasSeenWelcome(userId),
+      marked: false,
+    }
+  }
+
+  const isFirstVisit = userId ? welcomeStateRef.current.isFirst : false
+
+  useEffect(() => {
+    if (!userId || welcomeStateRef.current.marked) return
+    if (welcomeStateRef.current.isFirst) {
+      markWelcomeSeen(userId)
+    }
+    welcomeStateRef.current.marked = true
+  }, [userId])
 
   useEffect(() => {
     if (!userId) return undefined
@@ -293,11 +314,37 @@ function Dashboard() {
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 pb-20 sm:pb-6 overflow-x-hidden">
         
         {/* Приветствие */}
-        <div className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-2xl p-4 sm:p-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 break-words">
-            {profile?.full_name ? `С возвращением, ${profile.full_name}!` : 'Добро пожаловать!'}
-          </h2>
-          <p className="text-sm text-gray-600 mt-1">{new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+        <div
+          className={`rounded-2xl p-4 sm:p-6 relative overflow-hidden ${
+            isFirstVisit
+              ? 'bg-gradient-to-br from-green-500 via-emerald-500 to-teal-600 text-white shadow-lg shadow-green-600/20'
+              : 'bg-gradient-to-r from-green-100 to-emerald-100'
+          }`}
+        >
+          {isFirstVisit && (
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/4" aria-hidden />
+          )}
+          <div className="relative flex items-start gap-3">
+            {isFirstVisit && (
+              <div className="hidden sm:flex w-12 h-12 bg-white/20 backdrop-blur rounded-xl items-center justify-center shrink-0">
+                <Sparkles className="w-6 h-6 text-white" aria-hidden />
+              </div>
+            )}
+            <div>
+              <h2 className={`text-xl sm:text-2xl font-bold break-words ${isFirstVisit ? 'text-white' : 'text-gray-800'}`}>
+                {profile?.full_name
+                  ? isFirstVisit
+                    ? `Добро пожаловать, ${profile.full_name}!`
+                    : `С возвращением, ${profile.full_name}!`
+                  : 'Добро пожаловать!'}
+              </h2>
+              <p className={`text-sm mt-1 ${isFirstVisit ? 'text-green-50' : 'text-gray-600'}`}>
+                {isFirstVisit
+                  ? 'Рады, что вы с нами. Пройдите короткий обзор — или начните с создания участка.'
+                  : new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </p>
+            </div>
+          </div>
         </div>
 
         {!digestDismissed && (

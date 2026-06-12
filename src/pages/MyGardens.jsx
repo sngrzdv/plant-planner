@@ -17,6 +17,7 @@ export default function MyGardens() {
   const [gardens, setGardens] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editingGarden, setEditingGarden] = useState(null)
   const [newGarden, setNewGarden] = useState({ name: '', location: '' })
   const [photo, setPhoto] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
@@ -69,55 +70,88 @@ export default function MyGardens() {
     return uploadImage(file, 'garden-photos', { path: fileName, upsert: false })
   }
 
-  async function createGarden() {
+  function openEditGarden(garden) {
+    setEditingGarden(garden)
+    setNewGarden({ name: garden.name || '', location: garden.location || '' })
+    setPhoto(null)
+    setPhotoPreview(garden.image_url || null)
+  }
+
+  function closeGardenModal() {
+    setShowModal(false)
+    setEditingGarden(null)
+    setNewGarden({ name: '', location: '' })
+    setPhoto(null)
+    setPhotoPreview(null)
+  }
+
+  async function saveGarden() {
     if (!newGarden.name.trim()) {
       toast.error('Введите название')
       return
     }
-    
-    setUploading(true)
 
+    setUploading(true)
     try {
-      let imageUrl = null
+      let imageUrl = editingGarden?.image_url || null
       if (photo) {
         try {
           imageUrl = await uploadPhoto(photo)
         } catch (uploadErr) {
           const ok = await confirm(
-            'Не удалось загрузить фото (сеть или Storage). Создать участок без фото?',
-            { title: 'Фото не загрузилось', confirmLabel: 'Создать без фото' }
+            'Не удалось загрузить фото. Сохранить без нового фото?',
+            { title: 'Фото не загрузилось', confirmLabel: 'Сохранить' }
           )
           if (!ok) return
-          toast.info('Участок создаётся без фото. Загрузите garden_photos_storage.sql или попробуйте на Vercel.')
         }
       }
-      const { data, error } = await supabase
-        .from('layouts')
-        .insert({
-          user_id: user.id,
-          name: newGarden.name,
-          location: newGarden.location,
-          image_url: imageUrl,
-          width: 3000,
-          height: 2000
-        })
-        .select()
-        .single()
 
-      if (error) throw error
-      if (!data) throw new Error('Supabase не вернул созданный участок')
+      if (editingGarden) {
+        const { data, error } = await supabase
+          .from('layouts')
+          .update({
+            name: newGarden.name.trim(),
+            location: newGarden.location?.trim() || null,
+            image_url: imageUrl,
+          })
+          .eq('id', editingGarden.id)
+          .select()
+          .single()
 
-      setGardens([data, ...gardens])
-      setShowModal(false)
-      setNewGarden({ name: '', location: '' })
-      setPhoto(null)
-      setPhotoPreview(null)
-      navigate(`/garden/${data.id}/edit`)
+        if (error) throw error
+        setGardens(gardens.map((g) => (g.id === editingGarden.id ? data : g)))
+        toast.success('Участок обновлён')
+        closeGardenModal()
+      } else {
+        await createGardenWithData(imageUrl)
+      }
     } catch (error) {
-      toast.error(`Ошибка при создании: ${error.message}`)
+      toast.error(`Ошибка: ${error.message}`)
     } finally {
       setUploading(false)
     }
+  }
+
+  async function createGardenWithData(imageUrl) {
+    const { data, error } = await supabase
+      .from('layouts')
+      .insert({
+        user_id: user.id,
+        name: newGarden.name.trim(),
+        location: newGarden.location?.trim() || null,
+        image_url: imageUrl,
+        width: 3000,
+        height: 2000,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    if (!data) throw new Error('Supabase не вернул созданный участок')
+
+    setGardens([data, ...gardens])
+    closeGardenModal()
+    navigate(`/garden/${data.id}/edit`)
   }
 
   async function deleteGarden(id) {
@@ -221,12 +255,13 @@ export default function MyGardens() {
                     >
                       <Eye className="w-4 h-4" /> Открыть
                     </Link>
-                    <Link 
-                      to={`/garden/${garden.id}/edit`} 
+                    <button
+                      type="button"
+                      onClick={() => openEditGarden(garden)}
                       className="flex items-center justify-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-2.5 rounded-xl hover:bg-blue-100 text-sm font-medium transition-all"
                     >
                       <Edit className="w-4 h-4" />
-                    </Link>
+                    </button>
                     <button 
                       onClick={() => deleteGarden(garden.id)} 
                       className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-all"
@@ -243,12 +278,12 @@ export default function MyGardens() {
       <MobileNav />
 
       {/* Модалка создания */}
-      {showModal && (
+      {(showModal || editingGarden) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">Новый участок</h2>
-              <button onClick={() => { setShowModal(false); setPhoto(null); setPhotoPreview(null); }}>
+              <h2 className="text-xl font-semibold">{editingGarden ? 'Редактировать участок' : 'Новый участок'}</h2>
+              <button type="button" onClick={closeGardenModal}>
                 <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
               </button>
             </div>
@@ -314,15 +349,17 @@ export default function MyGardens() {
             </div>
             
             <div className="flex gap-3 mt-6">
-              <button 
-                onClick={createGarden} 
+              <button
+                type="button"
+                onClick={saveGarden}
                 disabled={uploading}
                 className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white py-2.5 rounded-xl hover:from-green-700 hover:to-emerald-700 font-medium transition-all disabled:opacity-50 shadow-md shadow-green-500/20"
               >
-                {uploading ? 'Загрузка фото...' : 'Создать и перейти к редактированию'}
+                {uploading ? 'Сохранение…' : editingGarden ? 'Сохранить' : 'Создать и перейти к редактированию'}
               </button>
-              <button 
-                onClick={() => { setShowModal(false); setPhoto(null); setPhotoPreview(null); }} 
+              <button
+                type="button"
+                onClick={closeGardenModal}
                 className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl hover:bg-gray-200 font-medium transition-all"
               >
                 Отмена

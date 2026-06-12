@@ -1,13 +1,6 @@
 /** Чистая логика сезонной статистики огорода (без Supabase). */
 
-export const JOURNAL_ACTION_LABELS = {
-  sowed: 'Посев',
-  transplanted: 'Пересадка в грунт',
-  custom_plant_added: 'Запись в дневник',
-  harvest: 'Сбор урожая',
-  fertilized: 'Подкормка',
-  watered: 'Полив',
-}
+import { journalActionLabel } from './plantLabels'
 
 const MONTHS = ['', 'Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 
@@ -127,7 +120,7 @@ export function groupJournalByAction(entries) {
   return [...map.entries()]
     .map(([action, count]) => ({
       action,
-      label: JOURNAL_ACTION_LABELS[action] || action,
+      label: journalActionLabel(action),
       count,
     }))
     .sort((a, b) => b.count - a.count)
@@ -275,7 +268,7 @@ export function formatJournalEntry(entry) {
     month: 'short',
     year: 'numeric',
   })
-  const action = JOURNAL_ACTION_LABELS[entry.action] || entry.action || 'Событие'
+  const action = journalActionLabel(entry.action)
   const title = entry.details || entry.plants?.name || entry.user_plants?.name || 'Запись'
   return { id: entry.id, date, action, title }
 }

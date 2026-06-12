@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -13,7 +13,6 @@ import MobileNav from '../components/MobileNav'
 import { reminderService } from '../services/reminderService'
 import { notificationService } from '../services/notificationService'
 import { useReferenceStore } from '../store/referenceStore'
-import { JOURNAL_ACTION_LABELS } from '../lib/plantLabels'
 import { toast } from '../store/toastStore'
 import {
   getPlantBedRejectMessage,
@@ -22,6 +21,12 @@ import {
 } from '../lib/plantBedFilter'
 import { confirm } from '../store/confirmStore'
 import { isGridCellOccupied } from '../services/plantingService'
+import { fetchUserPlants } from '../services/userPlantService'
+import { mergePlantsWithUserPlants } from '../lib/userPlantAdapter'
+
+function potPlantInfo(pot) {
+  return pot?.plants || pot?.user_plants || null
+}
 
 export default function Pots() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -46,20 +51,26 @@ export default function Pots() {
   const [bedRows, setBedRows] = useState([])
   const [bedPlantsData, setBedPlantsData] = useState([])
 
-  const [showHistory, setShowHistory] = useState(false)
-  const [history, setHistory] = useState([])
-
   const [transplantStep, setTransplantStep] = useState(1)
   const [selectedTransplantCell, setSelectedTransplantCell] = useState(null)
   const [bedForTransplant, setBedForTransplant] = useState(null)
   const [transplanting, setTransplanting] = useState(false)
 
+  const [userPlants, setUserPlants] = useState([])
   const [newPot, setNewPot] = useState({
-    plant_id: '',
+    plant_key: '',
     custom_name: '',
     sowing_date: new Date().toISOString().split('T')[0],
     notes: ''
   })
+
+  const plantOptions = useMemo(
+    () => mergePlantsWithUserPlants(
+      (plants || []).map((p) => withPlantCategory(p, categories)),
+      userPlants
+    ),
+    [plants, userPlants, categories]
+  )
 
   const loadData = useCallback(async () => {
     setLoadError('')
@@ -69,13 +80,13 @@ export default function Pots() {
     ] = await Promise.all([
       supabase
         .from('pots')
-        .select(`*, plants:plant_id(*)`)
+        .select(`*, plants:plant_id(*), user_plants:user_plant_id(*)`)
         .eq('user_id', user.id)
         .eq('status', 'growing')
         .order('sowing_date', { ascending: false }),
       supabase
         .from('pots')
-        .select(`*, plants:plant_id(*)`)
+        .select(`*, plants:plant_id(*), user_plants:user_plant_id(*)`)
         .eq('user_id', user.id)
         .eq('status', 'transplanted')
         .order('transplanted_date', { ascending: false }),
@@ -94,12 +105,13 @@ export default function Pots() {
       setPots(potsData)
       potsData.forEach(pot => {
         const daysSince = Math.floor((new Date() - new Date(pot.sowing_date)) / (1000 * 60 * 60 * 24))
-        const daysToTransplant = pot.plants?.days_to_transplant || 45
+        const info = potPlantInfo(pot)
+        const daysToTransplant = info?.days_to_transplant || 45
         const progress = Math.min(100, Math.round((daysSince / daysToTransplant) * 100))
         if (progress >= 80) {
           const key = `seedling-ready-${pot.id}`
           if (!localStorage.getItem(key)) {
-            notificationService.sendSeedlingReady(pot.plants?.name || 'Растение')
+            notificationService.sendSeedlingReady(info?.name || 'Растение')
             localStorage.setItem(key, '1')
           }
         }
@@ -109,12 +121,14 @@ export default function Pots() {
     if (transplantedData) setTransplantedPots(transplantedData)
     setLoading(false)
 
-    const [plantsData, catData] = await Promise.all([
+    const [plantsData, catData, diaryPlants] = await Promise.all([
       useReferenceStore.getState().getPlants(),
       useReferenceStore.getState().getCategories(),
+      fetchUserPlants(user.id).catch(() => []),
     ])
     setPlants(plantsData || [])
     setCategories(catData || [])
+    setUserPlants(diaryPlants || [])
   }, [user.id])
 
   useEffect(() => {
@@ -123,48 +137,68 @@ export default function Pots() {
   }, [loadData])
 
   useEffect(() => {
-    if (searchParams.get('action') !== 'add') return
+    const action = searchParams.get('action')
+    const userPlantId = searchParams.get('userPlant')
+    if (action !== 'add' && !userPlantId) return
     setShowAddModal(true)
+    if (userPlantId) {
+      setNewPot((prev) => ({ ...prev, plant_key: `user-${userPlantId}` }))
+    }
     const next = new URLSearchParams(searchParams)
     next.delete('action')
+    next.delete('userPlant')
     setSearchParams(next, { replace: true })
   }, [searchParams, setSearchParams])
 
   async function addPot() {
-    if (!newPot.plant_id) {
+    if (!newPot.plant_key) {
       toast.error('Выберите растение')
       return
     }
+    const isUserPlant = String(newPot.plant_key).startsWith('user-')
+    const catalogPlantId = isUserPlant ? null : newPot.plant_key
+    const userPlantId = isUserPlant ? String(newPot.plant_key).replace(/^user-/, '') : null
+    const selectedPlant = plantOptions.find((p) => String(p.id) === String(newPot.plant_key))
+
     try {
       const { data, error } = await supabase.from('pots').insert({
-        user_id: user.id, plant_id: newPot.plant_id,
+        user_id: user.id,
+        plant_id: catalogPlantId,
+        user_plant_id: userPlantId,
         custom_name: newPot.custom_name || null,
-        sowing_date: newPot.sowing_date, notes: newPot.notes || null, status: 'growing'
-      }).select(`*, plants:plant_id(*)`).single()
+        sowing_date: newPot.sowing_date,
+        notes: newPot.notes || null,
+        status: 'growing',
+      }).select(`*, plants:plant_id(*), user_plants:user_plant_id(*)`).single()
 
       if (error) throw error
       if (!data) throw new Error('Supabase не вернул созданную рассаду')
 
       setPots([data, ...pots])
 
+      const plantName = potPlantInfo(data)?.name || 'растение'
       const { error: journalError } = await supabase.from('garden_journal').insert({
-        user_id: user.id, plant_id: newPot.plant_id,
-        pot_id: data.id, action: 'sowed',
-        details: `Посеяно: ${data.plants?.name || 'растение'}`,
-        created_at: new Date().toISOString()
+        user_id: user.id,
+        plant_id: catalogPlantId,
+        user_plant_id: userPlantId,
+        pot_id: data.id,
+        action: 'sowed',
+        details: `Посеяно: ${plantName}`,
+        created_at: new Date().toISOString(),
       })
       if (journalError) console.warn('Не удалось записать событие в журнал:', journalError)
 
-      if (data && data.plants) {
-        await reminderService.generateForPlant(user.id, data.plants, 'sowed', data.sowing_date)
+      if (selectedPlant) {
+        await reminderService.generateForPlant(user.id, selectedPlant, 'sowed', data.sowing_date)
       }
 
-      if (data.plants?.days_to_transplant && data.plants.days_to_transplant <= 5) {
-        notificationService.sendSeedlingReady(data.plants.name)
+      const daysToTransplant = selectedPlant?.days_to_transplant
+      if (daysToTransplant != null && daysToTransplant <= 5) {
+        notificationService.sendSeedlingReady(plantName)
       }
 
       setShowAddModal(false)
-      setNewPot({ plant_id: '', custom_name: '', sowing_date: new Date().toISOString().split('T')[0], notes: '' })
+      setNewPot({ plant_key: '', custom_name: '', sowing_date: new Date().toISOString().split('T')[0], notes: '' })
       toast.success('Рассада добавлена')
     } catch (error) {
       toast.error(`Не удалось добавить рассаду: ${error.message}`)
@@ -178,14 +212,24 @@ export default function Pots() {
       destructive: true,
     })
     if (!ok) return
-    const { error } = await supabase.from('pots').delete().eq('id', id)
-    if (error) {
+
+    try {
+      // Снять ссылки до DELETE (работает и без миграции FK on delete set null)
+      await Promise.all([
+        supabase.from('garden_journal').update({ pot_id: null }).eq('pot_id', id).eq('user_id', user.id),
+        supabase.from('reminders').update({ pot_id: null }).eq('pot_id', id).eq('user_id', user.id),
+        supabase.from('plants_on_beds').update({ source_pot_id: null }).eq('source_pot_id', id),
+      ])
+
+      const { error } = await supabase.from('pots').delete().eq('id', id).eq('user_id', user.id)
+      if (error) throw error
+
+      toast.success('Рассада удалена')
+      if (activeTab === 'growing') setPots(pots.filter(p => p.id !== id))
+      else setTransplantedPots(transplantedPots.filter(p => p.id !== id))
+    } catch (error) {
       toast.error(`Не удалось удалить: ${error.message}`)
-      return
     }
-    toast.success('Рассада удалена')
-    if (activeTab === 'growing') setPots(pots.filter(p => p.id !== id))
-    else setTransplantedPots(transplantedPots.filter(p => p.id !== id))
   }
 
   async function openTransplantModal(pot) {
@@ -245,7 +289,7 @@ export default function Pots() {
     }
     if (!selectedPot?.id || !selectedBed) return
 
-    const plant = withPlantCategory(selectedPot?.plants, categories)
+    const plant = withPlantCategory(potPlantInfo(selectedPot), categories)
     if (!isPlantAllowedForBedType(plant, bedForTransplant?.type)) {
       toast.error(getPlantBedRejectMessage(bedForTransplant?.type, plant))
       return
@@ -277,21 +321,28 @@ export default function Pots() {
       }
 
       const { data: plantOnBed, error: plantOnBedError } = await supabase.from('plants_on_beds').insert({
-        bed_id: selectedBed, plant_id: selectedPot.plant_id,
+        bed_id: selectedBed,
+        plant_id: selectedPot.plant_id || null,
+        user_plant_id: selectedPot.user_plant_id || null,
         planted_date: new Date().toISOString().split('T')[0],
-        source_type: 'pot', source_pot_id: selectedPot.id, stage: 'seedling'
+        source_type: 'pot',
+        source_pot_id: selectedPot.id,
+        stage: 'seedling',
       }).select('id').single()
       if (plantOnBedError) throw plantOnBedError
       createdPlantOnBedId = plantOnBed?.id
 
+      const plantInfo = potPlantInfo(selectedPot)
       const { data: bedElement, error: bedElementError } = await supabase.from('bed_elements').insert({
         bed_id: selectedBed, type: 'plant_spot',
-        name: selectedPot.plants?.name || 'Растение',
+        name: plantInfo?.name || 'Растение',
         pos_x: Math.round(selectedTransplantCell.x) + 4,
         pos_y: Math.round(selectedTransplantCell.y) + 4,
         width: CELL_SIZE - 8, height: CELL_SIZE - 8,
-        color: '#4ADE80', plant_id: selectedPot.plant_id,
-        planted_year: new Date().getFullYear()
+        color: '#4ADE80',
+        plant_id: selectedPot.plant_id || null,
+        user_plant_id: selectedPot.user_plant_id || null,
+        planted_year: new Date().getFullYear(),
       }).select('id').single()
       if (bedElementError) throw bedElementError
       createdElementId = bedElement?.id
@@ -303,15 +354,18 @@ export default function Pots() {
       if (potError) throw potError
 
       const { error: journalError } = await supabase.from('garden_journal').insert({
-        user_id: user.id, plant_id: selectedPot.plant_id,
-        pot_id: selectedPot.id, action: 'transplanted',
+        user_id: user.id,
+        plant_id: selectedPot.plant_id || null,
+        user_plant_id: selectedPot.user_plant_id || null,
+        pot_id: selectedPot.id,
+        action: 'transplanted',
         details: `Пересажено в ${bedForTransplant?.name || 'грядку'}`,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
       })
       if (journalError) console.warn('Не удалось записать событие пересадки в журнал:', journalError)
 
-      if (selectedPot.plants) {
-        await reminderService.generateForPlant(user.id, selectedPot.plants, 'transplanted', new Date().toISOString().split('T')[0])
+      if (plantInfo) {
+        await reminderService.generateForPlant(user.id, plantInfo, 'transplanted', new Date().toISOString().split('T')[0])
       }
 
       toast.success('Растение пересажено на грядку')
@@ -330,24 +384,13 @@ export default function Pots() {
     }
   }
 
-  async function loadHistory() {
-    const { data } = await supabase
-      .from('garden_journal')
-      .select('*, plants:plant_id(name), pots:pot_id(custom_name)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(30)
-    if (data) setHistory(data)
-    setShowHistory(true)
-  }
-
   function getDaysSince(sowingDate) {
     return Math.floor((new Date() - new Date(sowingDate)) / (1000 * 60 * 60 * 24))
   }
 
   function getProgress(pot) {
     const daysSince = getDaysSince(pot.sowing_date)
-    const daysToTransplant = pot.plants?.days_to_transplant || 45
+    const daysToTransplant = potPlantInfo(pot)?.days_to_transplant || 45
     return Math.min(100, Math.round((daysSince / daysToTransplant) * 100))
   }
 
@@ -367,9 +410,10 @@ export default function Pots() {
 
   const filteredPots = pots
   .filter(pot => {
-    const name = (pot.custom_name || pot.plants?.name || '').toLowerCase()
+    const info = potPlantInfo(pot)
+    const name = (pot.custom_name || info?.name || '').toLowerCase()
     const matchesSearch = name.includes(searchTerm.toLowerCase())
-    const matchesCategory = !filterCategory || pot.plants?.category_id === filterCategory
+    const matchesCategory = !filterCategory || info?.category_id === filterCategory
     const matchesReady = !filterReadyOnly || getProgress(pot) >= 80
     return matchesSearch && matchesCategory && matchesReady
   })
@@ -377,8 +421,8 @@ export default function Pots() {
     switch (sortBy) {
       case 'date-asc': return new Date(a.sowing_date) - new Date(b.sowing_date)
       case 'date-desc': return new Date(b.sowing_date) - new Date(a.sowing_date)
-      case 'name-asc': return (a.custom_name || a.plants?.name || '').localeCompare(b.custom_name || b.plants?.name || '')
-      case 'name-desc': return (b.custom_name || b.plants?.name || '').localeCompare(a.custom_name || a.plants?.name || '')
+      case 'name-asc': return (a.custom_name || potPlantInfo(a)?.name || '').localeCompare(b.custom_name || potPlantInfo(b)?.name || '')
+      case 'name-desc': return (b.custom_name || potPlantInfo(b)?.name || '').localeCompare(a.custom_name || potPlantInfo(a)?.name || '')
       case 'progress-desc': return getProgress(b) - getProgress(a)
       case 'progress-asc': return getProgress(a) - getProgress(b)
       default: return 0
@@ -409,9 +453,9 @@ export default function Pots() {
             <p className="text-sm text-gray-500 mt-1">{pots.length} активно • {transplantedPots.length} пересажено</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={loadHistory} className="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+            <Link to="/pots/journal" className="flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
               <BookOpen className="w-4 h-4" /> Журнал
-            </button>
+            </Link>
             <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 text-sm font-medium transition-colors">
               <Plus className="w-4 h-4" /> Посадить семечко
             </button>
@@ -468,22 +512,23 @@ export default function Pots() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                 {filteredPots.map(pot => {
+                  const info = potPlantInfo(pot)
                   const progress = getProgress(pot)
                   const stage = getGrowthStage(progress)
                   const progressColor = getProgressColor(progress)
                   const daysSince = getDaysSince(pot.sowing_date)
-                  const daysLeft = (pot.plants?.days_to_transplant || 45) - daysSince
+                  const daysLeft = (info?.days_to_transplant || 45) - daysSince
                   return (
                     <div key={pot.id} className="bg-white rounded-2xl shadow-sm p-5 hover:shadow-md transition-all group relative overflow-hidden">
                       <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: progressColor }} />
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-start gap-3">
                           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${stage.bg}`}>
-                            <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl" compact />
+                            <PlantImage src={info?.image_url} alt={info?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl" compact />
                           </div>
                           <div>
-                            <h3 className="font-semibold text-gray-800">{pot.custom_name || pot.plants?.name}</h3>
-                            {pot.custom_name && <p className="text-sm text-gray-500">{pot.plants?.name}</p>}
+                            <h3 className="font-semibold text-gray-800">{pot.custom_name || info?.name}</h3>
+                            {pot.custom_name && <p className="text-sm text-gray-500">{info?.name}</p>}
                             <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${stage.bg} ${stage.color}`}>{stage.label}</span>
                           </div>
                         </div>
@@ -500,7 +545,7 @@ export default function Pots() {
                         <div className="flex-1 space-y-2">
                           <div className="flex items-center gap-2 text-sm text-gray-600"><Calendar className="w-4 h-4 text-gray-400" /><span>Посеяно: {new Date(pot.sowing_date).toLocaleDateString('ru-RU')}</span></div>
                           <div className="flex items-center gap-2 text-sm text-gray-600"><Clock className="w-4 h-4 text-gray-400" /><span>{daysSince} дней прошло</span>{daysLeft > 0 && <span className="text-xs text-gray-400">• ещё ~{daysLeft} дн.</span>}</div>
-                          <div className="flex items-center gap-2 text-sm text-gray-600"><Droplets className="w-4 h-4 text-blue-400" /><span>Полив: раз в {pot.plants?.watering_freq_days} дн.</span></div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600"><Droplets className="w-4 h-4 text-blue-400" /><span>Полив: раз в {info?.watering_freq_days} дн.</span></div>
                         </div>
                       </div>
                       <div className="mb-4">
@@ -529,14 +574,16 @@ export default function Pots() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {transplantedPots.map(pot => (
+                {transplantedPots.map(pot => {
+                  const info = potPlantInfo(pot)
+                  return (
                   <div key={pot.id} className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4">
                     <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center text-2xl">
-                      <PlantImage src={pot.plants?.image_url} alt={pot.plants?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl" compact />
+                      <PlantImage src={info?.image_url} alt={info?.name || ''} className="w-12 h-12 rounded-xl object-cover" fallbackClassName="w-12 h-12 rounded-xl" compact />
                     </div>
                     <div className="flex-1">
-                      <p className="font-semibold text-gray-800">{pot.custom_name || pot.plants?.name}</p>
-                      {pot.custom_name && <p className="text-sm text-gray-500">{pot.plants?.name}</p>}
+                      <p className="font-semibold text-gray-800">{pot.custom_name || info?.name}</p>
+                      {pot.custom_name && <p className="text-sm text-gray-500">{info?.name}</p>}
                       <p className="text-xs text-gray-400 mt-1">Пересажено: {pot.transplanted_date ? new Date(pot.transplanted_date).toLocaleDateString('ru-RU') : '—'}</p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -544,7 +591,8 @@ export default function Pots() {
                       <button onClick={() => deletePot(pot.id)} className="text-gray-300 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -557,7 +605,7 @@ export default function Pots() {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-semibold">Посадить семечко</h2><button onClick={() => setShowAddModal(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
             <div className="space-y-3">
-              <div><label className="block text-sm font-medium mb-1">Растение *</label><select value={newPot.plant_id} onChange={e => setNewPot({...newPot, plant_id: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20"><option value="">Выберите растение</option>{plants.map(plant => <option key={plant.id} value={plant.id}>{plant.name}</option>)}</select></div>
+              <div><label className="block text-sm font-medium mb-1">Растение *</label><select value={newPot.plant_key} onChange={e => setNewPot({...newPot, plant_key: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20"><option value="">Выберите растение</option>{plantOptions.map(plant => <option key={plant.id} value={plant.id}>{plant._isUserPlant ? '📔 ' : ''}{plant.name}</option>)}</select></div>
               <input type="text" placeholder="Название (необязательно)" value={newPot.custom_name} onChange={e => setNewPot({...newPot, custom_name: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
               <input type="date" value={newPot.sowing_date} onChange={e => setNewPot({...newPot, sowing_date: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
               <textarea placeholder="Заметки..." value={newPot.notes} onChange={e => setNewPot({...newPot, notes: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows={2} />
@@ -571,7 +619,7 @@ export default function Pots() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[85vh] flex flex-col shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">Пересадка: {selectedPot?.custom_name || selectedPot?.plants?.name}</h2>
+              <h2 className="text-xl font-semibold">Пересадка: {selectedPot?.custom_name || potPlantInfo(selectedPot)?.name}</h2>
               <button onClick={() => { setShowTransplantModal(false); setTransplantStep(1); }}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
 
@@ -728,25 +776,6 @@ export default function Pots() {
                   className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 disabled:opacity-50 font-medium transition-colors">
                   {transplanting ? 'Пересаживаем…' : 'Пересадить в выбранную клетку'}
                 </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showHistory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowHistory(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[70vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-semibold">Журнал действий</h2><button onClick={() => setShowHistory(false)}><X className="w-5 h-5 text-gray-400" /></button></div>
-            {history.length === 0 ? <p className="text-gray-400 text-center py-8">Пока нет записей</p> : (
-              <div className="space-y-2">
-                {history.map(entry => (
-                  <div key={entry.id} className="p-3 bg-gray-50 rounded-xl text-sm">
-                    <div className="flex items-center gap-2 mb-1"><span className="text-xs font-medium text-gray-500 uppercase">{JOURNAL_ACTION_LABELS[entry.action] || 'Запись'}</span><span className="font-medium">{entry.plants?.name || entry.pots?.custom_name || 'Растение'}</span></div>
-                    <p className="text-gray-600">{entry.details}</p>
-                    <p className="text-xs text-gray-400 mt-1">{new Date(entry.created_at).toLocaleString('ru-RU')}</p>
-                  </div>
-                ))}
               </div>
             )}
           </div>

@@ -3,6 +3,8 @@ import {
   hasCompletedOnboarding,
   markOnboardingCompleted,
   resetOnboarding,
+  hasSeenWelcome,
+  markWelcomeSeen,
 } from './onboardingStorage'
 
 describe('onboardingStorage', () => {
@@ -35,5 +37,13 @@ describe('onboardingStorage', () => {
     markOnboardingCompleted('user-1')
     resetOnboarding('user-1')
     expect(hasCompletedOnboarding('user-1')).toBe(false)
+  })
+
+  it('welcome greeting is shown only once per user', () => {
+    expect(hasSeenWelcome('user-1')).toBe(false)
+    markWelcomeSeen('user-1')
+    expect(hasSeenWelcome('user-1')).toBe(true)
+    resetOnboarding('user-1')
+    expect(hasSeenWelcome('user-1')).toBe(true)
   })
 })

@@ -134,6 +134,7 @@ export default function Reminders() {
   const [showTimeline, setShowTimeline] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [completingId, setCompletingId] = useState(null)
+  const [bulkDayAction, setBulkDayAction] = useState(false)
   
   // Календарь
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
@@ -246,7 +247,47 @@ export default function Reminders() {
     notificationService.info('Задача перенесена на завтра')
   }
 
+  async function uncompleteReminder(id) {
+    if (completingId) return
+
+    setCompletingId(id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id ?? user?.id
+      const result = await reminderService.uncompleteReminder(userId, id)
+
+      if (!result.ok) {
+        notificationService.error(result.error?.message || 'Не удалось вернуть задачу')
+        return
+      }
+
+      setReminders((rows) =>
+        rows.map((row) =>
+          row.id === id
+            ? { ...row, status: 'pending', completed_at: null }
+            : row
+        )
+      )
+      notificationService.info('Задача снова активна')
+    } finally {
+      setCompletingId(null)
+    }
+  }
+
+  async function toggleReminderComplete(reminder) {
+    if (reminder.status === 'completed') {
+      await uncompleteReminder(reminder.id)
+    } else {
+      await completeReminder(reminder.id)
+    }
+  }
+
   async function deleteReminder(id) {
+    const target = reminders.find((r) => r.id === id)
+    if (target?.status === 'completed') {
+      notificationService.error('Выполненные задачи удалить нельзя')
+      return
+    }
     const ok = await confirm('Удалить задачу? Это действие нельзя отменить.', {
       title: 'Удалить задачу',
       confirmLabel: 'Удалить',
@@ -263,6 +304,79 @@ export default function Reminders() {
       notificationService.error('Не удалось удалить')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function completeAllSelectedDay() {
+    const pending = selectedDayReminders.filter((r) => r.status !== 'completed')
+    if (pending.length === 0) return
+    setBulkDayAction(true)
+    try {
+      const completedAt = new Date().toISOString()
+      const ids = pending.map((r) => r.id)
+      const { error } = await supabase
+        .from('reminders')
+        .update({ status: 'completed', completed_at: completedAt })
+        .in('id', ids)
+        .eq('user_id', user.id)
+      if (error) throw error
+      setReminders((rows) =>
+        rows.map((row) =>
+          ids.includes(row.id) ? { ...row, status: 'completed', completed_at: completedAt } : row
+        )
+      )
+      notificationService.success(`Отмечено выполненными: ${ids.length}`)
+    } catch {
+      notificationService.error('Не удалось отметить все задачи')
+    } finally {
+      setBulkDayAction(false)
+    }
+  }
+
+  async function uncompleteAllSelectedDay() {
+    const done = selectedDayReminders.filter((r) => r.status === 'completed')
+    if (done.length === 0) return
+    setBulkDayAction(true)
+    try {
+      const ids = done.map((r) => r.id)
+      const { error } = await supabase
+        .from('reminders')
+        .update({ status: 'pending', completed_at: null })
+        .in('id', ids)
+        .eq('user_id', user.id)
+      if (error) throw error
+      setReminders((rows) =>
+        rows.map((row) =>
+          ids.includes(row.id) ? { ...row, status: 'pending', completed_at: null } : row
+        )
+      )
+      notificationService.info(`Возвращено в активные: ${ids.length}`)
+    } catch {
+      notificationService.error('Не удалось вернуть задачи')
+    } finally {
+      setBulkDayAction(false)
+    }
+  }
+
+  async function deleteAllPendingSelectedDay() {
+    const pending = selectedDayReminders.filter((r) => r.status !== 'completed')
+    if (pending.length === 0) return
+    const ok = await confirm(
+      `Удалить все невыполненные задачи на этот день (${pending.length})?`,
+      { title: 'Удалить задачи', confirmLabel: 'Удалить все', destructive: true },
+    )
+    if (!ok) return
+    setBulkDayAction(true)
+    try {
+      const ids = pending.map((r) => r.id)
+      const { error } = await supabase.from('reminders').delete().in('id', ids).eq('user_id', user.id)
+      if (error) throw error
+      setReminders((rows) => rows.filter((row) => !ids.includes(row.id)))
+      notificationService.success(`Удалено: ${ids.length}`)
+    } catch {
+      notificationService.error('Не удалось удалить задачи')
+    } finally {
+      setBulkDayAction(false)
     }
   }
 
@@ -488,11 +602,11 @@ export default function Reminders() {
         {columnId === 'completed' && (
           <div className="flex gap-2 mt-3">
             <button
-              onClick={() => deleteReminder(r.id)}
-              disabled={deletingId === r.id}
-              className="w-full text-xs bg-gray-100 text-gray-500 px-2 py-2 rounded-lg hover:bg-gray-200 transition-all min-h-[36px] disabled:opacity-50"
+              onClick={() => uncompleteReminder(r.id)}
+              disabled={completingId === r.id}
+              className="w-full text-xs bg-amber-50 text-amber-700 px-2 py-2 rounded-lg hover:bg-amber-100 transition-all min-h-[36px] disabled:opacity-50"
             >
-              {deletingId === r.id ? '...' : 'Удалить'}
+              {completingId === r.id ? '...' : '↩ Не выполнено'}
             </button>
           </div>
         )}
@@ -855,14 +969,47 @@ export default function Reminders() {
                   </div>
                   
                   <div className="p-4 sm:p-5">
-                    <div className="flex items-center justify-between mb-4 gap-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                       <p className="text-sm text-gray-500">{selectedDayReminders.length} задач</p>
-                      <button 
-                        onClick={() => setShowAddModal(true)}
-                        className="text-xs bg-green-50 text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-100 transition-colors shrink-0"
-                      >
-                        + Добавить
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {selectedDayReminders.some((r) => r.status !== 'completed') && (
+                          <button
+                            type="button"
+                            onClick={completeAllSelectedDay}
+                            disabled={bulkDayAction}
+                            className="text-xs bg-green-50 text-green-700 px-2.5 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50"
+                          >
+                            Все выполнены
+                          </button>
+                        )}
+                        {selectedDayReminders.some((r) => r.status === 'completed') && (
+                          <button
+                            type="button"
+                            onClick={uncompleteAllSelectedDay}
+                            disabled={bulkDayAction}
+                            className="text-xs bg-amber-50 text-amber-700 px-2.5 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+                          >
+                            Вернуть все
+                          </button>
+                        )}
+                        {selectedDayReminders.some((r) => r.status !== 'completed') && (
+                          <button
+                            type="button"
+                            onClick={deleteAllPendingSelectedDay}
+                            disabled={bulkDayAction}
+                            className="text-xs bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-100 disabled:opacity-50"
+                          >
+                            Удалить невыполненные
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowAddModal(true)}
+                          className="text-xs bg-green-50 text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-100 transition-colors shrink-0"
+                        >
+                          + Добавить
+                        </button>
+                      </div>
                     </div>
                     
                     {selectedDayReminders.length === 0 ? (
@@ -885,12 +1032,13 @@ export default function Reminders() {
                           >
                             <button 
                               type="button"
-                              onClick={() => completeReminder(r.id)} 
-                              disabled={r.status === 'completed' || completingId === r.id}
+                              onClick={() => toggleReminderComplete(r)} 
+                              disabled={completingId === r.id}
                               className="min-w-[36px] min-h-[36px] flex items-center justify-center disabled:opacity-50 shrink-0"
+                              title={r.status === 'completed' ? 'Вернуть в невыполненные' : 'Отметить выполненной'}
                             >
                               {r.status === 'completed' ? 
-                                <CheckCircle className="w-5 h-5 text-green-500" /> : 
+                                <CheckCircle className="w-5 h-5 text-green-500 hover:text-amber-500 transition-colors" /> : 
                                 <Circle className="w-5 h-5 text-gray-300 hover:text-green-500 transition-colors" />
                               }
                             </button>
@@ -905,12 +1053,16 @@ export default function Reminders() {
                                 <p className="text-xs text-gray-500 ml-6 truncate">{r.plants.name}</p>
                               )}
                             </div>
-                            <button 
-                              onClick={() => deleteReminder(r.id)} 
-                              className="p-2 text-gray-300 hover:text-red-500 min-w-[36px] min-h-[36px] transition-colors shrink-0"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {r.status !== 'completed' && (
+                              <button 
+                                type="button"
+                                onClick={() => deleteReminder(r.id)} 
+                                className="p-2 text-gray-300 hover:text-red-500 min-w-[36px] min-h-[36px] transition-colors shrink-0"
+                                title="Удалить"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>

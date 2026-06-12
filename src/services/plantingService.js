@@ -40,11 +40,12 @@ export async function fetchUserBedIds(userId) {
 /**
  * Посадка в клетку редактора: bed_elements + plants_on_beds (как при пересадке из рассады).
  */
-export async function plantInBedGrid(bedId, plant, { cellX, cellY, plantedYear } = {}) {
+export async function plantInBedGrid(bedId, plant, { cellX, cellY, plantedYear, userPlantId } = {}) {
   const year = plantedYear ?? new Date().getFullYear()
   const today = new Date().toISOString().split('T')[0]
   const x = snapCoord(cellX) + 4
   const y = snapCoord(cellY) + 4
+  const catalogPlantId = userPlantId ? null : plant?.id
 
   if (await isGridCellOccupied(bedId, cellX, cellY)) {
     throw new Error('Эта клетка уже занята')
@@ -61,7 +62,8 @@ export async function plantInBedGrid(bedId, plant, { cellX, cellY, plantedYear }
       width: CELL_SIZE - 8,
       height: CELL_SIZE - 8,
       color: '#4ADE80',
-      plant_id: plant.id,
+      plant_id: catalogPlantId,
+      user_plant_id: userPlantId || null,
       planted_year: year,
     })
     .select('*, plant:plant_id(id, name, image_url, watering_freq_days, maturation_days, planting_method, difficulty, scientific_facts)')
@@ -71,7 +73,8 @@ export async function plantInBedGrid(bedId, plant, { cellX, cellY, plantedYear }
 
   const { error: onBedError } = await supabase.from('plants_on_beds').insert({
     bed_id: bedId,
-    plant_id: plant.id,
+    plant_id: catalogPlantId,
+    user_plant_id: userPlantId || null,
     planted_date: today,
     source_type: 'seedling_direct',
     stage: 'seedling',

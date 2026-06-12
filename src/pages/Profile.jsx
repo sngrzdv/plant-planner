@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import {
   BarChart3, User, Settings, Bell, Moon, Sprout,
-  MapPin, CloudRain, Mail, HelpCircle,
+  MapPin, CloudRain, Mail, HelpCircle, Trash2,
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
@@ -18,10 +18,13 @@ import { profileToPrefs, saveProfilePrefs, prefsToDbColumns } from '../lib/profi
 import { useAutoSave } from '../hooks/useAutoSave'
 import { toast } from '../store/toastStore'
 import { resetOnboarding } from '../lib/onboardingStorage'
+import { deleteOwnAccount } from '../services/accountService'
+import { confirm } from '../store/confirmStore'
 
 export default function Profile() {
   const navigate = useNavigate()
   const { profile, setProfile, isAdmin, signOut } = useAuthStore()
+  const [deletingAccount, setDeletingAccount] = useState(false)
   const [activeTab, setActiveTab] = useState('account')
   const [statsData, setStatsData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -137,6 +140,41 @@ export default function Profile() {
     if (!profile?.id) return
     resetOnboarding(profile.id)
     navigate('/dashboard')
+  }
+
+  async function handleDeleteAccount() {
+    if (!profile?.id || deletingAccount) return
+
+    const ok = await confirm(
+      'Будут безвозвратно удалены ваш аккаунт, участки, рассада, задачи и все личные данные. Продолжить?',
+      { title: 'Удалить аккаунт?', confirmLabel: 'Продолжить', destructive: true },
+    )
+    if (!ok) return
+
+    const confirmed = await confirm(
+      'Это действие нельзя отменить. Удалить аккаунт навсегда?',
+      { title: 'Последнее подтверждение', confirmLabel: 'Удалить навсегда', destructive: true },
+    )
+    if (!confirmed) return
+
+    setDeletingAccount(true)
+    try {
+      await deleteOwnAccount()
+      await signOut()
+      navigate('/login', { replace: true })
+      toast.success('Аккаунт удалён')
+    } catch (error) {
+      const msg = error?.message || 'Не удалось удалить аккаунт'
+      if (/delete_own_account|function|schema cache|could not find/i.test(msg)) {
+        toast.error(
+          'Удаление аккаунта не настроено в Supabase. Откройте SQL Editor и выполните файл supabase/delete_own_account.sql, затем повторите попытку.',
+        )
+      } else {
+        toast.error(msg)
+      }
+    } finally {
+      setDeletingAccount(false)
+    }
   }
 
   const tabs = [
@@ -278,6 +316,23 @@ export default function Profile() {
                   Указать город →
                 </button>
               )}
+            </div>
+
+            <div className="p-4 sm:p-6 bg-red-50/50">
+              <h3 className="font-semibold text-red-900 mb-2 flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-600" /> Опасная зона
+              </h3>
+              <p className="text-sm text-red-800/80 mb-4 leading-relaxed">
+                Удаление аккаунта необратимо. Будут стёрты участки, рассада, задачи и профиль.
+              </p>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deletingAccount}
+                className="text-sm font-medium text-red-700 border border-red-200 bg-white hover:bg-red-50 px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {deletingAccount ? 'Удаление…' : 'Удалить аккаунт'}
+              </button>
             </div>
           </div>
         )}

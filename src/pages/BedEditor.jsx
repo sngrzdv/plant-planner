@@ -20,6 +20,8 @@ import {
   isPlantAllowedForBedType,
   withPlantCategory,
 } from '../lib/plantBedFilter'
+import { fetchUserPlants } from '../services/userPlantService'
+import { mergePlantsWithUserPlants, isUserPlantEntry } from '../lib/userPlantAdapter'
 
 const THEME = {
   soil: { base: '#a0826b', border: '#6B5443', highlight: '#8B7355' },
@@ -133,11 +135,16 @@ export default function BedEditor() {
       setBedPlants(elements.filter(e => e.type === 'plant_spot').map(p => ({ ...p, _x: p.pos_x, _y: p.pos_y, _w: p.width, _h: p.height })))
     }
 
-    const [plantsList, categories] = await Promise.all([
+    const { user } = useAuthStore.getState()
+    const [plantsList, categories, userPlantsList] = await Promise.all([
       useReferenceStore.getState().getPlants(),
       useReferenceStore.getState().getCategories(),
+      user?.id ? fetchUserPlants(user.id).catch(() => []) : Promise.resolve([]),
     ])
-    setAllPlants((plantsList || []).map((p) => withPlantCategory(p, categories)))
+    setAllPlants(mergePlantsWithUserPlants(
+      (plantsList || []).map((p) => withPlantCategory(p, categories)),
+      userPlantsList
+    ))
 
     setLoading(false)
   }, [id])
@@ -298,6 +305,7 @@ export default function BedEditor() {
       const data = await plantInBedGrid(id, plant, {
         cellX: selectedCell.x,
         cellY: selectedCell.y,
+        userPlantId: isUserPlantEntry(plant) ? plant._userPlantId : undefined,
       })
       setBedPlants((prev) => [...prev, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
@@ -319,9 +327,9 @@ export default function BedEditor() {
 
   async function handleDropOnCell(e, subBedId, cellX, cellY) {
     e.preventDefault(); e.stopPropagation(); setDragOverCell(null)
-    const plantId = parseInt(e.dataTransfer.getData('plantId'))
-    if (!plantId) return
-    const plant = allPlants.find(p => p.id === plantId)
+    const rawId = e.dataTransfer.getData('plantId')
+    if (!rawId) return
+    const plant = allPlants.find(p => String(p.id) === String(rawId))
     if (!plant) return
     if (!isPlantAllowedForBedType(plant, bed?.type)) {
       toast.error(getPlantBedRejectMessage(bed?.type, plant))
@@ -345,7 +353,11 @@ export default function BedEditor() {
     }
     plantingInProgress.current = true
     try {
-      const data = await plantInBedGrid(id, plant, { cellX, cellY })
+      const data = await plantInBedGrid(id, plant, {
+        cellX,
+        cellY,
+        userPlantId: isUserPlantEntry(plant) ? plant._userPlantId : undefined,
+      })
       setBedPlants((prev) => [...prev, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
       if (user) {
@@ -524,7 +536,13 @@ export default function BedEditor() {
                   <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
                     <PlantImage src={plant.image_url} alt={plant.name} className="w-7 h-7 rounded object-cover" fallbackClassName="w-7 h-7 rounded" compact />
                   </div>
-                  <div className="flex-1 min-w-0"><p className="text-[11px] font-medium truncate">{plant.name}</p><p className="text-[9px] text-gray-400 flex items-center gap-1"><Droplets className="w-2.5 h-2.5" />{plant.watering_freq_days}д <Calendar className="w-2.5 h-2.5 ml-0.5" />{plant.maturation_days}д</p></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium truncate">{plant.name}</p>
+                    <p className="text-[9px] text-gray-400 flex items-center gap-1">
+                      {plant._isUserPlant && <span className="text-emerald-600">📔</span>}
+                      <Droplets className="w-2.5 h-2.5" />{plant.watering_freq_days}д <Calendar className="w-2.5 h-2.5 ml-0.5" />{plant.maturation_days}д
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>

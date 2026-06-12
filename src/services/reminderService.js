@@ -185,6 +185,44 @@ class ReminderService {
     invalidatePendingRemindersCache()
     return { ok: true, data }
   }
+
+  async uncompleteReminder(userId, reminderId) {
+    if (!userId || !reminderId) {
+      return { ok: false, error: new Error('Не удалось определить пользователя или задачу') }
+    }
+
+    const columnMissing = (message) =>
+      /completed_at|does not exist|column|schema cache/i.test(message || '')
+
+    const runUpdate = (payload, selectColumns) =>
+      supabase
+        .from('reminders')
+        .update(payload)
+        .eq('id', reminderId)
+        .eq('user_id', userId)
+        .select(selectColumns)
+        .maybeSingle()
+
+    let { data, error } = await runUpdate(
+      { status: 'pending', completed_at: null },
+      'id, status, completed_at',
+    )
+
+    if (error && columnMissing(error.message)) {
+      ;({ data, error } = await runUpdate({ status: 'pending' }, 'id, status'))
+    }
+
+    if (error) {
+      return { ok: false, error }
+    }
+
+    if (!data) {
+      return { ok: false, error: new Error('Задача не найдена или нет доступа') }
+    }
+
+    invalidatePendingRemindersCache()
+    return { ok: true, data }
+  }
 }
 
 export const reminderService = new ReminderService()

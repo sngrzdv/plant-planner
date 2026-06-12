@@ -1,18 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { useReferenceStore } from '../store/referenceStore'
 import { 
   Users, Sprout, Shield, Database, Trash2, Plus, BookOpen, 
-  Search, X, Edit, ClipboardList, Check, Ban, Droplets, Calendar
+  Search, X, Edit, ClipboardList, Check, Ban, Droplets, Calendar, Eye, ArrowUpDown, Link2
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
 import PlantImage from '../components/PlantImage'
 import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
-import { plantingMethodLabel } from '../lib/plantLabels'
+import { plantingMethodLabel, SUBMISSION_STATUS_FILTERS, SUBMISSION_STATUS_META } from '../lib/plantLabels'
+import { formatSupabaseError } from '../lib/formatSupabaseError'
 
 const ADMIN_RLS_SQL = 'supabase/complete_database.sql'
 import { uploadPlantImage, deletePlantImage } from '../services/plantImageStorage'
@@ -20,8 +21,13 @@ import { resolvePlantImageUrl } from '../lib/plantImageUrl'
 import {
   approveSubmission,
   rejectSubmission,
-  fetchPendingSubmissions,
+  fetchAdminSubmissions,
+  markSubmissionInReview,
+  updateSubmission,
+  submissionToForm,
+  formToSubmissionPayload,
 } from '../services/userPlantService'
+import PlantEntryFormFields from '../components/PlantEntryFormFields'
 
 export default function AdminPanel() {
   const { profile, isAdmin } = useAuthStore()
@@ -32,6 +38,7 @@ export default function AdminPanel() {
   const [fertilizers, setFertilizers] = useState([])
   const [issues, setIssues] = useState([])
   const [submissions, setSubmissions] = useState([])
+  const [submissionFilter, setSubmissionFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [adminError, setAdminError] = useState('')
@@ -62,6 +69,21 @@ export default function AdminPanel() {
   const [newIssue, setNewIssue] = useState({
     plant_id: '', name: '', type: 'disease', symptoms: '', treatment: '', prevention: ''
   })
+  const [usersSort, setUsersSort] = useState('date-desc')
+  const [selectedSubmission, setSelectedSubmission] = useState(null)
+  const [submissionForm, setSubmissionForm] = useState(null)
+  const [submissionPhotoFile, setSubmissionPhotoFile] = useState(null)
+  const [submissionPhotoPreview, setSubmissionPhotoPreview] = useState(null)
+  const [submissionRejectComment, setSubmissionRejectComment] = useState('')
+  const [savingSubmission, setSavingSubmission] = useState(false)
+  const [fertilizerFormMode, setFertilizerFormMode] = useState('master')
+  const [newFertilizerLink, setNewFertilizerLink] = useState({
+    source_id: '', plant_id: '', application_stage: '', description: '',
+  })
+  const [issueFormMode, setIssueFormMode] = useState('master')
+  const [newIssueLink, setNewIssueLink] = useState({
+    source_id: '', plant_id: '', symptoms: '', treatment: '', prevention: '',
+  })
   
   useEffect(() => { loadAllData() }, [])
 
@@ -75,7 +97,7 @@ export default function AdminPanel() {
     setAdminError('')
     let submissionsData = []
     try {
-      submissionsData = await fetchPendingSubmissions()
+      submissionsData = await fetchAdminSubmissions()
     } catch {
       submissionsData = []
     }
@@ -211,27 +233,129 @@ export default function AdminPanel() {
       await approveSubmission(sub)
       useReferenceStore.getState().invalidateReferences()
       toast.success(`«${sub.name}» добавлено в каталог`)
+      closeSubmissionDetail()
       loadAllData()
     } catch (err) {
       toast.error(err.message || 'Не удалось одобрить')
     }
   }
 
-  async function handleRejectSubmission(sub) {
-    const ok = await confirm(`Отклонить заявку «${sub.name}»?`, {
+  async function openSubmissionDetail(sub) {
+    setSelectedSubmission(sub)
+    setSubmissionForm(submissionToForm(sub))
+    setSubmissionPhotoFile(null)
+    setSubmissionPhotoPreview(sub.image_url || null)
+    setSubmissionRejectComment(sub.admin_comment || '')
+
+    if (sub.status === 'pending') {
+      try {
+        const updated = await markSubmissionInReview(sub.id)
+        if (updated) {
+          setSelectedSubmission(updated)
+          setSubmissionForm(submissionToForm(updated))
+          setSubmissions((list) => list.map((s) => (s.id === updated.id ? updated : s)))
+        }
+      } catch {
+        // миграция in_review может быть ещё не применена
+      }
+    }
+  }
+
+  function closeSubmissionDetail() {
+    setSelectedSubmission(null)
+    setSubmissionForm(null)
+    setSubmissionPhotoFile(null)
+    setSubmissionPhotoPreview(null)
+    setSubmissionRejectComment('')
+  }
+
+  function handleSubmissionPhotoSelect(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSubmissionPhotoFile(file)
+    const reader = new FileReader()
+    reader.onload = (ev) => setSubmissionPhotoPreview(ev.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  async function resolveSubmissionImageUrl(form) {
+    if (!submissionPhotoFile) return form.image_url || null
+    return uploadPlantImage(submissionPhotoFile, { plantName: form.name })
+  }
+
+  async function persistSubmissionEdits() {
+    const payload = formToSubmissionPayload(submissionForm, await resolveSubmissionImageUrl(submissionForm))
+    const updated = await updateSubmission(selectedSubmission.id, payload)
+    setSelectedSubmission(updated)
+    setSubmissionForm(submissionToForm(updated))
+    setSubmissionPhotoFile(null)
+    setSubmissionPhotoPreview(updated.image_url || null)
+    setSubmissions((list) => list.map((s) => (s.id === updated.id ? updated : s)))
+    return updated
+  }
+
+  async function saveSubmissionEdits() {
+    if (!selectedSubmission || !submissionForm?.name?.trim()) {
+      toast.error('Укажите название')
+      return
+    }
+    setSavingSubmission(true)
+    try {
+      await persistSubmissionEdits()
+      toast.success('Заявка сохранена')
+    } catch (err) {
+      toast.error(err.message || 'Не удалось сохранить')
+    } finally {
+      setSavingSubmission(false)
+    }
+  }
+
+  async function approveSubmissionFromModal() {
+    if (!selectedSubmission || !submissionForm?.name?.trim()) {
+      toast.error('Укажите название')
+      return
+    }
+    if (!submissionForm.category_id) {
+      toast.error('Выберите категорию')
+      return
+    }
+    setSavingSubmission(true)
+    try {
+      const updated = await persistSubmissionEdits()
+      await handleApproveSubmission(updated)
+    } catch (err) {
+      toast.error(err.message || 'Не удалось одобрить')
+    } finally {
+      setSavingSubmission(false)
+    }
+  }
+
+  async function rejectSubmissionFromModal() {
+    if (!selectedSubmission) return
+    const comment = submissionRejectComment.trim()
+    if (!comment) {
+      toast.error('Укажите комментарий — пользователь увидит причину отклонения')
+      return
+    }
+    const ok = await confirm(`Отклонить заявку «${submissionForm?.name || selectedSubmission.name}»?`, {
       title: 'Отклонить заявку',
       confirmLabel: 'Отклонить',
       destructive: true,
     })
     if (!ok) return
+    setSavingSubmission(true)
     try {
-      await rejectSubmission(sub.id, null)
+      await rejectSubmission(selectedSubmission.id, comment)
       toast.info('Заявка отклонена')
+      closeSubmissionDetail()
       loadAllData()
     } catch (err) {
       toast.error(err.message || 'Не удалось отклонить')
+    } finally {
+      setSavingSubmission(false)
     }
   }
+
 
   async function deletePlant(id) {
     const ok = await confirm('Удалить растение?', {
@@ -285,17 +409,52 @@ export default function AdminPanel() {
   }
   
   async function addFertilizer() {
-    if (!newFertilizer.plant_id || !newFertilizer.name) {
-      toast.error('Заполните поля')
+    if (!newFertilizer.name?.trim()) {
+      toast.error('Укажите название удобрения')
       return
     }
-    const { error } = await supabase.from('fertilizers').insert(newFertilizer)
+    const { error } = await supabase.from('fertilizers').insert({
+      name: newFertilizer.name.trim(),
+      type: newFertilizer.type,
+      plant_id: null,
+      source_id: null,
+      application_stage: null,
+      description: null,
+    })
     if (error) {
       toast.error(`Не удалось добавить удобрение: ${error.message}`)
       return
     }
     setShowFertilizerForm(false)
     setNewFertilizer({ plant_id: '', name: '', type: 'complex', application_stage: '', description: '' })
+    loadAllData()
+  }
+
+  async function addFertilizerLink() {
+    if (!newFertilizerLink.source_id || !newFertilizerLink.plant_id) {
+      toast.error('Выберите удобрение и растение')
+      return
+    }
+    const master = fertilizerMasters.find((f) => String(f.id) === String(newFertilizerLink.source_id))
+    if (!master) {
+      toast.error('Удобрение не найдено')
+      return
+    }
+    const { error } = await supabase.from('fertilizers').insert({
+      name: master.name,
+      type: master.type,
+      plant_id: Number(newFertilizerLink.plant_id),
+      source_id: master.id,
+      application_stage: newFertilizerLink.application_stage?.trim() || null,
+      description: newFertilizerLink.description?.trim() || null,
+    })
+    if (error) {
+      toast.error(`Не удалось привязать удобрение: ${error.message}`)
+      return
+    }
+    setShowFertilizerForm(false)
+    setFertilizerFormMode('master')
+    setNewFertilizerLink({ source_id: '', plant_id: '', application_stage: '', description: '' })
     loadAllData()
   }
   
@@ -309,17 +468,54 @@ export default function AdminPanel() {
   }
   
   async function addIssue() {
-    if (!newIssue.plant_id || !newIssue.name) {
-      toast.error('Заполните поля')
+    if (!newIssue.name?.trim()) {
+      toast.error('Укажите название')
       return
     }
-    const { error } = await supabase.from('plant_issues').insert(newIssue)
+    const { error } = await supabase.from('plant_issues').insert({
+      name: newIssue.name.trim(),
+      type: newIssue.type,
+      plant_id: null,
+      source_id: null,
+      symptoms: newIssue.symptoms?.trim() || null,
+      treatment: newIssue.treatment?.trim() || null,
+      prevention: newIssue.prevention?.trim() || null,
+    })
     if (error) {
-      toast.error(`Не удалось добавить проблему растения: ${error.message}`)
+      toast.error(`Не удалось добавить проблему: ${error.message}`)
       return
     }
     setShowIssueForm(false)
     setNewIssue({ plant_id: '', name: '', type: 'disease', symptoms: '', treatment: '', prevention: '' })
+    loadAllData()
+  }
+
+  async function addIssueLink() {
+    if (!newIssueLink.source_id || !newIssueLink.plant_id) {
+      toast.error('Выберите болезнь и растение')
+      return
+    }
+    const master = issueMasters.find((i) => String(i.id) === String(newIssueLink.source_id))
+    if (!master) {
+      toast.error('Запись не найдена')
+      return
+    }
+    const { error } = await supabase.from('plant_issues').insert({
+      name: master.name,
+      type: master.type,
+      plant_id: Number(newIssueLink.plant_id),
+      source_id: master.id,
+      symptoms: newIssueLink.symptoms?.trim() || master.symptoms || null,
+      treatment: newIssueLink.treatment?.trim() || master.treatment || null,
+      prevention: newIssueLink.prevention?.trim() || master.prevention || null,
+    })
+    if (error) {
+      toast.error(`Не удалось привязать: ${error.message}`)
+      return
+    }
+    setShowIssueForm(false)
+    setIssueFormMode('master')
+    setNewIssueLink({ source_id: '', plant_id: '', symptoms: '', treatment: '', prevention: '' })
     loadAllData()
   }
   
@@ -335,11 +531,56 @@ export default function AdminPanel() {
   const filteredPlants = plants.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  const sortedUsers = useMemo(() => {
+    const list = [...users]
+    list.sort((a, b) => {
+      const da = new Date(a.created_at).getTime()
+      const db = new Date(b.created_at).getTime()
+      return usersSort === 'date-asc' ? da - db : db - da
+    })
+    return list
+  }, [users, usersSort])
+
+  const fertilizerMasters = useMemo(
+    () => fertilizers.filter((f) => !f.plant_id && !f.source_id),
+    [fertilizers]
+  )
+  const fertilizerLinks = useMemo(
+    () => fertilizers.filter((f) => f.plant_id != null),
+    [fertilizers]
+  )
+  const issueMasters = useMemo(
+    () => issues.filter((i) => !i.plant_id && !i.source_id),
+    [issues]
+  )
+  const issueLinks = useMemo(
+    () => issues.filter((i) => i.plant_id != null),
+    [issues]
+  )
+
+  const pendingSubmissionsCount = useMemo(
+    () => submissions.filter((s) => s.status === 'pending').length,
+    [submissions]
+  )
+
+  const filteredSubmissions = useMemo(() => {
+    if (submissionFilter === 'all') return submissions
+    return submissions.filter((s) => s.status === submissionFilter)
+  }, [submissions, submissionFilter])
+
+  const submissionEmptyMessage = {
+    all: 'Нет заявок',
+    pending: 'Нет новых заявок',
+    in_review: 'Нет заявок в работе',
+    approved: 'Нет одобренных заявок',
+    rejected: 'Нет отклонённых заявок',
+  }
   
   const tabs = [
     { key: 'users', label: 'Пользователи', icon: Users, count: adminStats.users },
     { key: 'plants', label: 'Растения', icon: Sprout, count: adminStats.plants },
-    { key: 'submissions', label: 'Заявки', icon: ClipboardList, count: submissions.length },
+    { key: 'submissions', label: 'Заявки', icon: ClipboardList, count: pendingSubmissionsCount },
     { key: 'categories', label: 'Категории', icon: BookOpen, count: adminStats.categories },
     { key: 'fertilizers', label: 'Удобрения', icon: Shield, count: fertilizers.length },
     { key: 'issues', label: 'Болезни', icon: Database, count: issues.length },
@@ -420,12 +661,21 @@ export default function AdminPanel() {
                       <th className="p-3 text-sm font-medium">Имя</th>
                       <th className="p-3 text-sm font-medium">Роль</th>
                       <th className="p-3 text-sm font-medium">Статус</th>
-                      <th className="p-3 text-sm font-medium">Дата регистрации</th>
+                      <th className="p-3 text-sm font-medium">
+                        <button
+                          type="button"
+                          onClick={() => setUsersSort((s) => (s === 'date-desc' ? 'date-asc' : 'date-desc'))}
+                          className="inline-flex items-center gap-1 hover:text-green-700"
+                        >
+                          Дата регистрации
+                          <ArrowUpDown className="w-3.5 h-3.5" />
+                        </button>
+                      </th>
                       <th className="p-3 text-sm font-medium">Действия</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map(u => {
+                    {sortedUsers.map(u => {
                       const isAdmin = u.role_id === 2
                       const isBlocked = u.is_blocked === true
                       const isCurrentUser = u.id === profile?.id
@@ -578,40 +828,54 @@ export default function AdminPanel() {
         {activeTab === 'submissions' && (
           <div className="bg-white rounded-2xl shadow-sm">
             <div className="p-4 sm:p-6 border-b">
-              <h2 className="text-lg font-semibold">Заявки пользователей ({submissions.length})</h2>
+              <h2 className="text-lg font-semibold">Заявки пользователей ({filteredSubmissions.length})</h2>
               <p className="text-sm text-gray-500 mt-1">Одобрите — растение попадёт в общий каталог</p>
+              <div className="flex flex-wrap gap-2 mt-4">
+                {SUBMISSION_STATUS_FILTERS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSubmissionFilter(key)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      submissionFilter === key
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="p-4 space-y-3">
-              {submissions.length === 0 ? (
-                <p className="text-center text-gray-400 py-8">Нет заявок на модерации</p>
-              ) : submissions.map((sub) => (
-                <div key={sub.id} className="border border-gray-100 rounded-xl p-4 flex flex-col sm:flex-row sm:items-start gap-4">
+              {filteredSubmissions.length === 0 ? (
+                <p className="text-center text-gray-400 py-8">{submissionEmptyMessage[submissionFilter]}</p>
+              ) : filteredSubmissions.map((sub) => {
+                const statusMeta = SUBMISSION_STATUS_META[sub.status] || SUBMISSION_STATUS_META.pending
+                return (
+                <div key={sub.id} className="border border-gray-100 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-800">{sub.name}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold text-gray-800">{sub.name}</h3>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusMeta.className}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
                     <p className="text-xs text-gray-500 mt-1">
                       {sub.category?.name} · полив {sub.watering_freq_days} дн. · урожай {sub.maturation_days} дн.
+                      · {new Date(sub.created_at).toLocaleDateString('ru-RU')}
                     </p>
                     {sub.description && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{sub.description}</p>}
-                    {sub.scientific_facts && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{sub.scientific_facts}</p>}
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleApproveSubmission(sub)}
-                      className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
-                    >
-                      <Check className="w-4 h-4" /> Одобрить
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRejectSubmission(sub)}
-                      className="flex items-center gap-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100"
-                    >
-                      <Ban className="w-4 h-4" /> Отклонить
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openSubmissionDetail(sub)}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-purple-50 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 shrink-0"
+                  >
+                    <Eye className="w-4 h-4" /> Открыть
+                  </button>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         )}
@@ -643,30 +907,68 @@ export default function AdminPanel() {
         {/* Удобрения */}
         {activeTab === 'fertilizers' && (
           <div className="bg-white rounded-2xl shadow-sm">
-            <div className="p-4 sm:p-6 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Удобрения ({fertilizers.length})</h2>
-              <button onClick={() => setShowFertilizerForm(true)}
-                className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-700">
-                <Plus className="w-4 h-4" /> Добавить
-              </button>
+            <div className="p-4 sm:p-6 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Удобрения</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Сначала справочник, затем привязка к растениям</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setFertilizerFormMode('master'); setShowFertilizerForm(true) }}
+                  className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-700"
+                >
+                  <Plus className="w-4 h-4" /> В справочник
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setFertilizerFormMode('link'); setShowFertilizerForm(true) }}
+                  className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-100"
+                >
+                  <Link2 className="w-4 h-4" /> К растению
+                </button>
+              </div>
             </div>
-            <div className="p-4 space-y-2">
-              {fertilizers.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">Нет данных</p> : (
-                fertilizers.map(f => (
-                  <div key={f.id} className="p-3 bg-gray-50 rounded-xl flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        f.type === 'organic' ? 'bg-green-100 text-green-700' : f.type === 'mineral' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                      }`}>{f.type === 'organic' ? 'Органика' : f.type === 'mineral' ? 'Минеральное' : 'Комплексное'}</span>
-                      <div>
-                        <p className="font-medium text-sm">{f.name}</p>
-                        <p className="text-xs text-gray-500">Для: {f.plants?.name || '—'} • {f.application_stage}</p>
+            <div className="p-4 space-y-6">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Справочник ({fertilizerMasters.length})</h3>
+                {fertilizerMasters.length === 0 ? (
+                  <p className="text-gray-400 text-sm py-2">Добавьте удобрения в справочник</p>
+                ) : (
+                  <div className="space-y-2">
+                    {fertilizerMasters.map((f) => (
+                      <div key={f.id} className="p-3 bg-gray-50 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            f.type === 'organic' ? 'bg-green-100 text-green-700' : f.type === 'mineral' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                          }`}>{f.type === 'organic' ? 'Органика' : f.type === 'mineral' ? 'Минеральное' : 'Комплексное'}</span>
+                          <p className="font-medium text-sm">{f.name}</p>
+                        </div>
+                        <button type="button" onClick={() => deleteFertilizer(f.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                       </div>
-                    </div>
-                    <button onClick={() => deleteFertilizer(f.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    ))}
                   </div>
-                ))
-              )}
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Привязки к растениям ({fertilizerLinks.length})</h3>
+                {fertilizerLinks.length === 0 ? (
+                  <p className="text-gray-400 text-sm py-2">Нет привязок</p>
+                ) : (
+                  <div className="space-y-2">
+                    {fertilizerLinks.map((f) => (
+                      <div key={f.id} className="p-3 bg-emerald-50/50 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-sm">{f.name}</p>
+                          <p className="text-xs text-gray-500">Для: {f.plants?.name || '—'} · {f.application_stage || 'без этапа'}</p>
+                          {f.description && <p className="text-xs text-gray-600 mt-1">{f.description}</p>}
+                        </div>
+                        <button type="button" onClick={() => deleteFertilizer(f.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -674,35 +976,69 @@ export default function AdminPanel() {
         {/* Болезни */}
         {activeTab === 'issues' && (
           <div className="bg-white rounded-2xl shadow-sm">
-            <div className="p-4 sm:p-6 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Болезни и вредители ({issues.length})</h2>
-              <button onClick={() => setShowIssueForm(true)}
-                className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-700">
-                <Plus className="w-4 h-4" /> Добавить
-              </button>
+            <div className="p-4 sm:p-6 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Болезни и вредители</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Справочник и привязки с описанием для растений</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setIssueFormMode('master'); setShowIssueForm(true) }}
+                  className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-green-700"
+                >
+                  <Plus className="w-4 h-4" /> В справочник
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIssueFormMode('link'); setShowIssueForm(true) }}
+                  className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-100"
+                >
+                  <Link2 className="w-4 h-4" /> К растению
+                </button>
+              </div>
             </div>
-            <div className="p-4 space-y-2">
-              {issues.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">Нет данных</p> : (
-                issues.map(i => (
-                  <div key={i.id} className="p-3 bg-gray-50 rounded-xl">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          i.type === 'disease' ? 'bg-red-100 text-red-700' : i.type === 'pest' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'
-                        }`}>{i.type === 'disease' ? 'Болезнь' : i.type === 'pest' ? 'Вредитель' : 'Проблема'}</span>
-                        <span className="font-medium text-sm">{i.name}</span>
+            <div className="p-4 space-y-6">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Справочник ({issueMasters.length})</h3>
+                {issueMasters.length === 0 ? (
+                  <p className="text-gray-400 text-sm py-2">Добавьте болезни и вредителей</p>
+                ) : (
+                  <div className="space-y-2">
+                    {issueMasters.map((i) => (
+                      <div key={i.id} className="p-3 bg-gray-50 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            i.type === 'disease' ? 'bg-red-100 text-red-700' : i.type === 'pest' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'
+                          }`}>{i.type === 'disease' ? 'Болезнь' : i.type === 'pest' ? 'Вредитель' : 'Проблема'}</span>
+                          <span className="font-medium text-sm">{i.name}</span>
+                        </div>
+                        <button type="button" onClick={() => deleteIssue(i.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                       </div>
-                      <button onClick={() => deleteIssue(i.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                    <p className="text-xs text-gray-500">Для: {i.plants?.name || '—'}</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 text-xs">
-                      <div className="bg-white p-2 rounded"><strong>Симптомы:</strong> {i.symptoms}</div>
-                      <div className="bg-white p-2 rounded"><strong>Лечение:</strong> {i.treatment}</div>
-                      <div className="bg-white p-2 rounded"><strong>Профилактика:</strong> {i.prevention}</div>
-                    </div>
+                    ))}
                   </div>
-                ))
-              )}
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Привязки ({issueLinks.length})</h3>
+                {issueLinks.length === 0 ? (
+                  <p className="text-gray-400 text-sm py-2">Нет привязок</p>
+                ) : (
+                  <div className="space-y-2">
+                    {issueLinks.map((i) => (
+                      <div key={i.id} className="p-3 bg-red-50/40 rounded-xl">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-sm">{i.name}</span>
+                          <button type="button" onClick={() => deleteIssue(i.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                        <p className="text-xs text-gray-500">Для: {i.plants?.name || '—'}</p>
+                        {i.symptoms && <p className="text-xs text-gray-600 mt-1"><strong>Симптомы:</strong> {i.symptoms}</p>}
+                        {i.treatment && <p className="text-xs text-gray-600"><strong>Лечение:</strong> {i.treatment}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -861,54 +1197,158 @@ export default function AdminPanel() {
       
       {/* Модалка: Удобрение */}
       {showFertilizerForm && (
-        <Modal title="Добавить удобрение" onClose={() => setShowFertilizerForm(false)}>
+        <Modal
+          title={fertilizerFormMode === 'link' ? 'Привязать удобрение к растению' : 'Добавить удобрение в справочник'}
+          onClose={() => { setShowFertilizerForm(false); setFertilizerFormMode('master') }}
+        >
           <div className="space-y-3">
-            <select value={newFertilizer.plant_id} onChange={e => setNewFertilizer({...newFertilizer, plant_id: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
-              <option value="">Выберите растение *</option>
-              {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <input type="text" placeholder="Название удобрения *" value={newFertilizer.name} onChange={e => setNewFertilizer({...newFertilizer, name: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
-            <select value={newFertilizer.type} onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
-              <option value="organic">Органическое</option>
-              <option value="mineral">Минеральное</option>
-              <option value="complex">Комплексное</option>
-            </select>
-            <input type="text" placeholder="Когда вносить" value={newFertilizer.application_stage} onChange={e => setNewFertilizer({...newFertilizer, application_stage: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
-            <textarea placeholder="Описание" value={newFertilizer.description} onChange={e => setNewFertilizer({...newFertilizer, description: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
-            <button onClick={addFertilizer} className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium">Добавить</button>
+            {fertilizerFormMode === 'link' ? (
+              <>
+                <select value={newFertilizerLink.source_id} onChange={e => setNewFertilizerLink({ ...newFertilizerLink, source_id: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
+                  <option value="">Удобрение из справочника *</option>
+                  {fertilizerMasters.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+                <select value={newFertilizerLink.plant_id} onChange={e => setNewFertilizerLink({ ...newFertilizerLink, plant_id: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
+                  <option value="">Растение *</option>
+                  {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <input type="text" placeholder="Когда вносить (для этого растения)" value={newFertilizerLink.application_stage} onChange={e => setNewFertilizerLink({ ...newFertilizerLink, application_stage: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
+                <textarea placeholder="Описание для этого растения" value={newFertilizerLink.description} onChange={e => setNewFertilizerLink({ ...newFertilizerLink, description: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="3" />
+                <button type="button" onClick={addFertilizerLink} className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium">Привязать</button>
+              </>
+            ) : (
+              <>
+                <input type="text" placeholder="Название удобрения *" value={newFertilizer.name} onChange={e => setNewFertilizer({ ...newFertilizer, name: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
+                <select value={newFertilizer.type} onChange={e => setNewFertilizer({ ...newFertilizer, type: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
+                  <option value="organic">Органическое</option>
+                  <option value="mineral">Минеральное</option>
+                  <option value="complex">Комплексное</option>
+                </select>
+                <button type="button" onClick={addFertilizer} className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium">Добавить в справочник</button>
+              </>
+            )}
           </div>
         </Modal>
       )}
       
-      {/* Модалка: Болезнь */}
       {showIssueForm && (
-        <Modal title="Добавить болезнь/вредителя" onClose={() => setShowIssueForm(false)}>
+        <Modal
+          title={issueFormMode === 'link' ? 'Привязать к растению' : 'Добавить в справочник'}
+          onClose={() => { setShowIssueForm(false); setIssueFormMode('master') }}
+        >
           <div className="space-y-3">
-            <select value={newIssue.plant_id} onChange={e => setNewIssue({...newIssue, plant_id: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
-              <option value="">Выберите растение *</option>
-              {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <input type="text" placeholder="Название *" value={newIssue.name} onChange={e => setNewIssue({...newIssue, name: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
-            <select value={newIssue.type} onChange={e => setNewIssue({...newIssue, type: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
-              <option value="disease">Болезнь</option>
-              <option value="pest">Вредитель</option>
-              <option value="physiological">Проблема</option>
-            </select>
-            <textarea placeholder="Симптомы" value={newIssue.symptoms} onChange={e => setNewIssue({...newIssue, symptoms: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
-            <textarea placeholder="Лечение" value={newIssue.treatment} onChange={e => setNewIssue({...newIssue, treatment: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
-            <textarea placeholder="Профилактика" value={newIssue.prevention} onChange={e => setNewIssue({...newIssue, prevention: e.target.value})} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
-            <button onClick={addIssue} className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium">Добавить</button>
+            {issueFormMode === 'link' ? (
+              <>
+                <select value={newIssueLink.source_id} onChange={e => setNewIssueLink({ ...newIssueLink, source_id: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
+                  <option value="">Болезнь / вредитель *</option>
+                  {issueMasters.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select>
+                <select value={newIssueLink.plant_id} onChange={e => setNewIssueLink({ ...newIssueLink, plant_id: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
+                  <option value="">Растение *</option>
+                  {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <textarea placeholder="Симптомы (для этого растения)" value={newIssueLink.symptoms} onChange={e => setNewIssueLink({ ...newIssueLink, symptoms: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
+                <textarea placeholder="Лечение" value={newIssueLink.treatment} onChange={e => setNewIssueLink({ ...newIssueLink, treatment: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
+                <textarea placeholder="Профилактика" value={newIssueLink.prevention} onChange={e => setNewIssueLink({ ...newIssueLink, prevention: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
+                <button type="button" onClick={addIssueLink} className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium">Привязать</button>
+              </>
+            ) : (
+              <>
+                <input type="text" placeholder="Название *" value={newIssue.name} onChange={e => setNewIssue({ ...newIssue, name: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" />
+                <select value={newIssue.type} onChange={e => setNewIssue({ ...newIssue, type: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
+                  <option value="disease">Болезнь</option>
+                  <option value="pest">Вредитель</option>
+                  <option value="physiological">Проблема</option>
+                </select>
+                <textarea placeholder="Симптомы (общие)" value={newIssue.symptoms} onChange={e => setNewIssue({ ...newIssue, symptoms: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
+                <textarea placeholder="Лечение (общее)" value={newIssue.treatment} onChange={e => setNewIssue({ ...newIssue, treatment: e.target.value })} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl" rows="2" />
+                <button type="button" onClick={addIssue} className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 font-medium">Добавить в справочник</button>
+              </>
+            )}
           </div>
         </Modal>
       )}
+
+      {selectedSubmission && submissionForm && (() => {
+        const statusMeta = SUBMISSION_STATUS_META[selectedSubmission.status] || SUBMISSION_STATUS_META.pending
+        const submissionEditable = ['pending', 'in_review'].includes(selectedSubmission.status)
+        return (
+        <Modal
+          title={`Заявка: ${submissionForm.name || 'Без названия'}`}
+          wide
+          onClose={closeSubmissionDetail}
+        >
+          <div className="space-y-4 max-h-[75vh] overflow-y-auto">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs text-gray-500">
+                Отправлена: {new Date(selectedSubmission.created_at).toLocaleString('ru-RU')}
+                {selectedSubmission.category?.name && ` · ${selectedSubmission.category.name}`}
+              </p>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusMeta.className}`}>
+                {statusMeta.label}
+              </span>
+            </div>
+
+            <PlantEntryFormFields
+              form={submissionForm}
+              setForm={setSubmissionForm}
+              categories={categories}
+              photoPreview={submissionPhotoPreview}
+              onPhotoSelect={submissionEditable ? handleSubmissionPhotoSelect : undefined}
+              showPersonalNotes={false}
+              readOnly={!submissionEditable}
+            />
+
+            {selectedSubmission.status === 'rejected' && selectedSubmission.admin_comment && (
+              <div className="p-3 bg-red-50 rounded-xl text-sm text-red-700">
+                <span className="font-medium">Причина отклонения: </span>
+                {selectedSubmission.admin_comment}
+              </div>
+            )}
+
+            {submissionEditable && (
+              <>
+                <div className="pt-2 border-t border-gray-100">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Комментарий при отклонении *
+                  </label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Обязателен, если отклоняете заявку. Пользователь увидит его во вкладке «Заявки».
+                  </p>
+                  <textarea
+                    value={submissionRejectComment}
+                    onChange={(e) => setSubmissionRejectComment(e.target.value)}
+                    rows={3}
+                    placeholder="Например: уточните категорию или добавьте описание ухода"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-200 focus:border-red-300"
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <button type="button" onClick={saveSubmissionEdits} disabled={savingSubmission} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50">
+                    {savingSubmission ? '…' : 'Сохранить'}
+                  </button>
+                  <button type="button" onClick={approveSubmissionFromModal} disabled={savingSubmission} className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                    <Check className="w-4 h-4" /> Одобрить
+                  </button>
+                  <button type="button" onClick={rejectSubmissionFromModal} disabled={savingSubmission || !submissionRejectComment.trim()} className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <Ban className="w-4 h-4" /> Отклонить
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </Modal>
+        )
+      })()}
     </div>
   )
 }
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, wide = false }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[85vh] overflow-y-auto shadow-2xl">
+      <div className={`bg-white rounded-2xl w-full p-6 max-h-[85vh] overflow-y-auto shadow-2xl ${wide ? 'max-w-2xl' : 'max-w-lg'}`}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">{title}</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
