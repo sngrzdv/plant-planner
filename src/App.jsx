@@ -26,6 +26,8 @@ import SiteGuide from './pages/SiteGuide'
 import MobileNav from './components/MobileNav'
 import ToastContainer from './components/ToastContainer'
 import ConfirmDialog from './components/ConfirmDialog'
+import AppOnboarding from './components/AppOnboarding'
+import { hasCompletedOnboarding } from './lib/onboardingStorage'
 
 const MyGardens = lazy(() => import('./pages/MyGardens'))
 const GardenEditor = lazy(() => import('./pages/GardenEditor'))
@@ -198,6 +200,17 @@ function Dashboard() {
   const [digestDismissed, setDigestDismissed] = useState(false)
   const [loadingTasks, setLoadingTasks] = useState(true)
   const [completingTask, setCompletingTask] = useState(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
+  useEffect(() => {
+    if (!userId) return undefined
+    const timer = setTimeout(() => {
+      if (!hasCompletedOnboarding(userId)) {
+        setShowOnboarding(true)
+      }
+    }, 700)
+    return () => clearTimeout(timer)
+  }, [userId])
 
   useEffect(() => {
     if (!userId) return
@@ -270,6 +283,13 @@ function Dashboard() {
   return (
     <div className="page-shell min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 overflow-x-hidden">
       <Header />
+      {showOnboarding && (
+        <AppOnboarding
+          userId={userId}
+          userName={profile?.full_name?.split(/\s+/)[0]}
+          onClose={() => setShowOnboarding(false)}
+        />
+      )}
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 pb-20 sm:pb-6 overflow-x-hidden">
         
         {/* Приветствие */}

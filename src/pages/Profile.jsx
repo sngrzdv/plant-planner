@@ -1,9 +1,10 @@
 import { createElement, useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import {
   BarChart3, User, Settings, Bell, Moon, Sprout,
-  MapPin, CloudRain, Mail,
+  MapPin, CloudRain, Mail, HelpCircle,
 } from 'lucide-react'
 import Header from '../components/Header'
 import MobileNav from '../components/MobileNav'
@@ -16,8 +17,10 @@ import { fetchGardenSeasonStats } from '../services/gardenSeasonStatsService'
 import { profileToPrefs, saveProfilePrefs, prefsToDbColumns } from '../lib/profilePrefs'
 import { useAutoSave } from '../hooks/useAutoSave'
 import { toast } from '../store/toastStore'
+import { resetOnboarding } from '../lib/onboardingStorage'
 
 export default function Profile() {
+  const navigate = useNavigate()
   const { profile, setProfile, isAdmin, signOut } = useAuthStore()
   const [activeTab, setActiveTab] = useState('account')
   const [statsData, setStatsData] = useState(null)
@@ -130,6 +133,12 @@ export default function Profile() {
     saveProfilePrefs({ lunarEnabled, weatherAlerts: next })
   }
 
+  function replayOnboarding() {
+    if (!profile?.id) return
+    resetOnboarding(profile.id)
+    navigate('/dashboard')
+  }
+
   const tabs = [
     { key: 'account', label: 'Аккаунт', icon: User },
     { key: 'stats', label: 'Статистика', icon: BarChart3 },
@@ -233,6 +242,22 @@ export default function Profile() {
                 />
               </div>
               <p className="text-xs text-gray-400 mt-3">Настройки синхронизируются с аккаунтом</p>
+            </div>
+
+            <div className="p-4 sm:p-6">
+              <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-gray-600" /> Помощь
+              </h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Краткий обзор разделов приложения: участки, рассада, каталог и задачи.
+              </p>
+              <button
+                type="button"
+                onClick={replayOnboarding}
+                className="text-sm font-medium text-green-600 hover:text-green-700"
+              >
+                Показать подсказки снова →
+              </button>
             </div>
 
             <div className="p-4 sm:p-6">

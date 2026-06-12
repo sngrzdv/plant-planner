@@ -78,7 +78,7 @@ export default function Login() {
           </p>
           <p>
             <Link to="/guide" className="text-gray-500 hover:text-green-600">
-              О приложении — полный обзор для ИИ
+              О приложении
             </Link>
           </p>
         </div>
