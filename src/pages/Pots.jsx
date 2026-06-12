@@ -21,6 +21,7 @@ import {
   withPlantCategory,
 } from '../lib/plantBedFilter'
 import { confirm } from '../store/confirmStore'
+import { isGridCellOccupied } from '../services/plantingService'
 
 export default function Pots() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -51,6 +52,7 @@ export default function Pots() {
   const [transplantStep, setTransplantStep] = useState(1)
   const [selectedTransplantCell, setSelectedTransplantCell] = useState(null)
   const [bedForTransplant, setBedForTransplant] = useState(null)
+  const [transplanting, setTransplanting] = useState(false)
 
   const [newPot, setNewPot] = useState({
     plant_id: '',
@@ -236,10 +238,12 @@ export default function Pots() {
   }
 
   async function transplant() {
+    if (transplanting) return
     if (!selectedTransplantCell) {
       toast.error('Выберите клетку на грядке')
       return
     }
+    if (!selectedPot?.id || !selectedBed) return
 
     const plant = withPlantCategory(selectedPot?.plants, categories)
     if (!isPlantAllowedForBedType(plant, bedForTransplant?.type)) {
@@ -247,11 +251,31 @@ export default function Pots() {
       return
     }
 
+    setTransplanting(true)
     const CELL_SIZE = 50
     let createdPlantOnBedId = null
     let createdElementId = null
 
     try {
+      const { data: freshPot, error: potCheckError } = await supabase
+        .from('pots')
+        .select('id, status')
+        .eq('id', selectedPot.id)
+        .single()
+      if (potCheckError) throw potCheckError
+      if (freshPot?.status === 'transplanted') {
+        toast.error('Эта рассада уже пересажена')
+        setShowTransplantModal(false)
+        setSelectedPot(null)
+        loadData()
+        return
+      }
+
+      if (await isGridCellOccupied(selectedBed, selectedTransplantCell.x, selectedTransplantCell.y)) {
+        toast.error('Эта клетка уже занята')
+        return
+      }
+
       const { data: plantOnBed, error: plantOnBedError } = await supabase.from('plants_on_beds').insert({
         bed_id: selectedBed, plant_id: selectedPot.plant_id,
         planted_date: new Date().toISOString().split('T')[0],
@@ -301,6 +325,8 @@ export default function Pots() {
       if (createdElementId) await supabase.from('bed_elements').delete().eq('id', createdElementId)
       if (createdPlantOnBedId) await supabase.from('plants_on_beds').delete().eq('id', createdPlantOnBedId)
       toast.error(`Не удалось пересадить: ${error.message}`)
+    } finally {
+      setTransplanting(false)
     }
   }
 
@@ -698,9 +724,9 @@ export default function Pots() {
                   )}
                 </div>
 
-                <button onClick={transplant} disabled={!selectedTransplantCell}
+                <button onClick={transplant} disabled={!selectedTransplantCell || transplanting}
                   className="w-full bg-green-600 text-white py-2.5 rounded-xl hover:bg-green-700 disabled:opacity-50 font-medium transition-colors">
-                  Пересадить в выбранную клетку
+                  {transplanting ? 'Пересаживаем…' : 'Пересадить в выбранную клетку'}
                 </button>
               </div>
             )}

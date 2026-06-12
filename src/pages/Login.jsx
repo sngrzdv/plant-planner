@@ -69,12 +69,19 @@ export default function Login() {
       title="Вход"
       subtitle="Планируйте участок, рассаду и уход"
       footer={
-        <p className="text-center text-gray-600 text-sm">
-          Нет аккаунта?{' '}
-          <Link to="/register" className="text-green-600 hover:text-green-700 font-medium">
-            Зарегистрироваться
-          </Link>
-        </p>
+        <div className="text-center text-gray-600 text-sm space-y-2">
+          <p>
+            Нет аккаунта?{' '}
+            <Link to="/register" className="text-green-600 hover:text-green-700 font-medium">
+              Зарегистрироваться
+            </Link>
+          </p>
+          <p>
+            <Link to="/guide" className="text-gray-500 hover:text-green-600">
+              О приложении — полный обзор для ИИ
+            </Link>
+          </p>
+        </div>
       }
     >
       {error && (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Save, Plus, Trash2, Minus, X, Search, Ruler, Grid3X3, Move, Droplets, Calendar, Sprout, Info, BarChart3, ClipboardList, PanelLeft } from 'lucide-react'
@@ -104,6 +104,7 @@ export default function BedEditor() {
   const [selectedPlantInfo, setSelectedPlantInfo] = useState(null)
   const [showPlantInfo, setShowPlantInfo] = useState(false)
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false)
+  const plantingInProgress = useRef(false)
 
   const loadData = useCallback(async () => {
     const { data: b, error: bedError } = await supabase.from('beds').select('*').eq('id', id).single()
@@ -284,7 +285,7 @@ export default function BedEditor() {
   }
 
   async function plantInCell(plant) {
-    if (!selectedCell) return
+    if (!selectedCell || plantingInProgress.current) return
     if (!isPlantAllowedForBedType(plant, bed?.type)) {
       toast.error(getPlantBedRejectMessage(bed?.type, plant))
       return
@@ -292,12 +293,13 @@ export default function BedEditor() {
     const isCompatible = await checkCompatibility(plant, selectedCell.x, selectedCell.y)
     if (!isCompatible) return
 
+    plantingInProgress.current = true
     try {
       const data = await plantInBedGrid(id, plant, {
         cellX: selectedCell.x,
         cellY: selectedCell.y,
       })
-      setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
+      setBedPlants((prev) => [...prev, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
       if (user) {
         try {
@@ -306,11 +308,13 @@ export default function BedEditor() {
           console.warn('Не удалось создать напоминания:', reminderError)
         }
       }
+      setShowPlantModal(false)
+      setSelectedCell(null)
     } catch (error) {
       toast.error(`Не удалось посадить: ${error.message}`)
+    } finally {
+      plantingInProgress.current = false
     }
-    setShowPlantModal(false)
-    setSelectedCell(null)
   }
 
   async function handleDropOnCell(e, subBedId, cellX, cellY) {
@@ -334,13 +338,15 @@ export default function BedEditor() {
   }
 
   async function plantInCellDirect(plant, cellX, cellY) {
+    if (plantingInProgress.current) return
     if (!isPlantAllowedForBedType(plant, bed?.type)) {
       toast.error(getPlantBedRejectMessage(bed?.type, plant))
       return
     }
+    plantingInProgress.current = true
     try {
       const data = await plantInBedGrid(id, plant, { cellX, cellY })
-      setBedPlants([...bedPlants, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
+      setBedPlants((prev) => [...prev, { ...data, _x: data.pos_x, _y: data.pos_y, _w: data.width, _h: data.height }])
       const { user } = useAuthStore.getState()
       if (user) {
         try {
@@ -351,6 +357,8 @@ export default function BedEditor() {
       }
     } catch (error) {
       toast.error(`Не удалось посадить: ${error.message}`)
+    } finally {
+      plantingInProgress.current = false
     }
   }
 

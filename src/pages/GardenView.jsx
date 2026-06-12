@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search, MousePointer2 } from 'lucide-react'
+import { ArrowLeft, Edit, Droplets, Calendar, X, MapPin, Plus, Minus, Search, MousePointer2, Trash2 } from 'lucide-react'
 import Header from '../components/Header'
 import PlantImage from '../components/PlantImage'
 import { useAuthStore } from '../store/authStore'
 import { reminderService } from '../services/reminderService'
 import { useReferenceStore } from '../store/referenceStore'
 import { toast } from '../store/toastStore'
+import { confirm } from '../store/confirmStore'
+import { removeGridPlanting } from '../services/plantingService'
+import { fetchZonePlants } from '../lib/gardenZonePlants'
 import PageNotFound from '../components/PageNotFound'
 import {
   filterPlantsForBedAndSearch,
@@ -23,6 +26,8 @@ const ZONE_SHORT = {
 const ZONE_NAMES = {
   house: 'Дом', rect: 'Грядка', flowerbed: 'Клумба', tree: 'Дерево', greenhouse: 'Теплица', bush: 'Куст', path: 'Дорожка', pond: 'Водоём'
 }
+
+const PLANT_PREVIEW_FIELDS = 'id, name, watering_freq_days, maturation_days, image_url'
 
 export default function GardenView() {
   const { id } = useParams()
@@ -42,11 +47,12 @@ export default function GardenView() {
   const [plantCategories, setPlantCategories] = useState([])
   const [searchPlant, setSearchPlant] = useState('')
   const [planting, setPlanting] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   const loadData = useCallback(async () => {
     const [{ data: l, error: layoutError }, { data: z }] = await Promise.all([
       supabase.from('layouts').select('*').eq('id', id).single(),
-      supabase.from('beds').select('*, plant:plant_id(id, name)').eq('layout_id', id),
+      supabase.from('beds').select(`*, plant:plant_id(${PLANT_PREVIEW_FIELDS})`).eq('layout_id', id),
     ])
 
     if (layoutError || !l) {
@@ -64,52 +70,16 @@ export default function GardenView() {
     loadData()
   }, [loadData])
 
-  async function clickZone(zone) {
+  const loadZonePlants = useCallback(async (zone) => {
+    const entries = await fetchZonePlants(zone)
+    setPlants(entries)
+    return entries
+  }, [])
+
+  async function clickZone(zone, event) {
+    event?.stopPropagation?.()
     setSelectedZone(zone)
-    
-    const [{ data: plantsOnBed }, { data: bedElements }] = await Promise.all([
-      supabase
-        .from('plants_on_beds')
-        .select('*, plants:plant_id(id, name, watering_freq_days, maturation_days, image_url)')
-        .eq('bed_id', zone.id),
-      supabase
-        .from('bed_elements')
-        .select('*, plant:plant_id(id, name, watering_freq_days, maturation_days, image_url)')
-        .eq('bed_id', zone.id)
-        .eq('type', 'plant_spot'),
-    ])
-
-    // Объединяем оба источника без дублей (bed_id + plant_id)
-    const seen = new Set()
-    const allZonePlants = []
-
-    for (const p of plantsOnBed || []) {
-      const key = `${zone.id}-${p.plant_id}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      allZonePlants.push({
-        id: p.id,
-        plants: p.plants,
-        source: p.source_type === 'pot' ? 'Из рассады' : 'Посажено',
-        watering: p.plants?.watering_freq_days,
-        maturation: p.plants?.maturation_days,
-      })
-    }
-
-    for (const p of bedElements || []) {
-      const key = `${zone.id}-${p.plant_id}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      allZonePlants.push({
-        id: p.id,
-        plants: p.plant,
-        source: 'Из редактора грядки',
-        watering: p.plant?.watering_freq_days,
-        maturation: p.plant?.maturation_days,
-      })
-    }
-
-    setPlants(allZonePlants)
+    await loadZonePlants(zone)
   }
 
   function doubleClickZone(zone) {
@@ -163,12 +133,14 @@ export default function GardenView() {
         .eq('id', selectedZone.id)
       if (bedError) throw bedError
 
+      await supabase.from('plants_on_beds').delete().eq('bed_id', selectedZone.id)
+
       const { error: plantError } = await supabase.from('plants_on_beds').insert({
         bed_id: selectedZone.id,
         plant_id: plantId,
         planted_date: new Date().toISOString().split('T')[0],
-        source_type: selectedZone.type === 'tree' || selectedZone.type === 'bush' ? 'seed' : 'seed',
-        stage: selectedZone.type === 'tree' || selectedZone.type === 'bush' ? 'adult' : 'seedling'
+        source_type: 'seed',
+        stage: 'adult',
       })
       if (plantError) throw plantError
 
@@ -179,8 +151,10 @@ export default function GardenView() {
           await reminderService.generateForPlant(user.id, plantData, 'planted', new Date().toISOString().split('T')[0])
         }
       }
-      setSelectedZone({ ...selectedZone, plant_id: plantId })
-      clickZone(selectedZone)
+      const updatedZone = { ...selectedZone, plant_id: plantId, plant: plantData || selectedZone.plant }
+      setZones((prev) => prev.map((z) => (z.id === selectedZone.id ? updatedZone : z)))
+      setSelectedZone(updatedZone)
+      await loadZonePlants(updatedZone)
       setShowPlantModal(false)
       toast.success('Растение посажено')
     } catch (error) {
@@ -189,6 +163,107 @@ export default function GardenView() {
       setPlanting(false)
     }
   }
+
+  async function removePlantFromZone() {
+    if (!selectedZone) return
+    const plantName = selectedZone.plant?.name || plants[0]?.plants?.name || 'растение'
+    const ok = await confirm(`Удалить «${plantName}» с этой зоны?`, {
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
+
+    setRemoving(true)
+    try {
+      const { error: bedError } = await supabase
+        .from('beds')
+        .update({ plant_id: null })
+        .eq('id', selectedZone.id)
+      if (bedError) throw bedError
+
+      const { error: onBedError } = await supabase
+        .from('plants_on_beds')
+        .delete()
+        .eq('bed_id', selectedZone.id)
+      if (onBedError) throw onBedError
+
+      const { error: elementsError } = await supabase
+        .from('bed_elements')
+        .delete()
+        .eq('bed_id', selectedZone.id)
+        .eq('type', 'plant_spot')
+      if (elementsError) throw elementsError
+
+      const clearedZone = { ...selectedZone, plant_id: null, plant: null }
+      setZones((prev) => prev.map((z) => (z.id === selectedZone.id ? clearedZone : z)))
+      setSelectedZone(clearedZone)
+      await loadZonePlants(clearedZone)
+      toast.success('Растение удалено с участка')
+    } catch (error) {
+      toast.error(`Не удалось удалить: ${error.message}`)
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  async function removeListedPlant(entry) {
+    const name = entry.plants?.name || 'растение'
+    const ok = await confirm(`Удалить «${name}» с этой зоны?`, {
+      confirmLabel: 'Удалить',
+      destructive: true,
+    })
+    if (!ok) return
+
+    setRemoving(true)
+    try {
+      if (entry.recordType === 'bed_elements') {
+        await removeGridPlanting(entry.id, selectedZone.id, entry.plantId)
+        const { data: left } = await supabase
+          .from('bed_elements')
+          .select('id')
+          .eq('bed_id', selectedZone.id)
+          .eq('type', 'plant_spot')
+          .limit(1)
+        if (!left?.length && selectedZone.plant_id === entry.plantId) {
+          await supabase.from('beds').update({ plant_id: null }).eq('id', selectedZone.id)
+        }
+      } else if (entry.recordType === 'zone_plant') {
+        await supabase.from('beds').update({ plant_id: null }).eq('id', selectedZone.id)
+        await supabase.from('plants_on_beds').delete().eq('bed_id', selectedZone.id)
+      } else {
+        const { error } = await supabase.from('plants_on_beds').delete().eq('id', entry.id)
+        if (error) throw error
+        const { data: left } = await supabase
+          .from('plants_on_beds')
+          .select('id')
+          .eq('bed_id', selectedZone.id)
+          .limit(1)
+        if (!left?.length) {
+          await supabase.from('beds').update({ plant_id: null }).eq('id', selectedZone.id)
+        }
+      }
+
+      const { data: freshBed } = await supabase
+        .from('beds')
+        .select(`*, plant:plant_id(${PLANT_PREVIEW_FIELDS})`)
+        .eq('id', selectedZone.id)
+        .single()
+
+      const refreshed = freshBed || { ...selectedZone, plant_id: null, plant: null }
+      setZones((prev) => prev.map((z) => (z.id === selectedZone.id ? refreshed : z)))
+      setSelectedZone(refreshed)
+      await loadZonePlants(refreshed)
+      toast.success('Растение удалено')
+    } catch (error) {
+      toast.error(`Не удалось удалить: ${error.message}`)
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  const canPlantOnZone = selectedZone?.type === 'tree' || selectedZone?.type === 'bush'
+  const canDeleteListedPlant = canPlantOnZone
+  const zoneHasPlant = Boolean(selectedZone?.plant_id || plants.length > 0)
 
   const filteredPlants = useMemo(
     () => filterPlantsForBedAndSearch(allPlants, selectedZone?.type, searchPlant, plantCategories),
@@ -282,8 +357,10 @@ export default function GardenView() {
                 {zones.map(zone => (
                   <div
                     key={zone.id}
-                    onClick={() => clickZone(zone)}
-                    onDoubleClick={() => doubleClickZone(zone)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={(e) => clickZone(zone, e)}
+                    onDoubleClick={(e) => { e.stopPropagation(); doubleClickZone(zone) }}
                     className="zone-item absolute border-2 flex items-center justify-center cursor-pointer hover:brightness-95 transition-all"
                     style={{
                       left: zone.pos_x, top: zone.pos_y,
@@ -336,21 +413,33 @@ export default function GardenView() {
             {selectedZone.notes && <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">{selectedZone.notes}</p>}
 
             {(selectedZone.type === 'rect' || selectedZone.type === 'flowerbed' || selectedZone.type === 'greenhouse') && (
-              <div className="flex gap-2">
-                <button onClick={() => navigate(`/bed/${selectedZone.id}/edit`)} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-                  Редактировать
-                </button>
-                <button onClick={openPlantModal} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
-                  Посадить
-                </button>
-              </div>
+              <button
+                onClick={() => navigate(`/bed/${selectedZone.id}/edit`)}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                Редактировать грядку
+              </button>
             )}
 
-            {(selectedZone.type === 'tree' || selectedZone.type === 'bush') && (
+            {canPlantOnZone && (
               <div className="flex gap-2">
-                <button onClick={openPlantModal} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
-                  Посадить растение
+                <button
+                  onClick={openPlantModal}
+                  disabled={planting || removing}
+                  className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
+                  Посадить
                 </button>
+                {zoneHasPlant && (
+                  <button
+                    onClick={removePlantFromZone}
+                    disabled={planting || removing}
+                    className="flex-1 bg-red-50 text-red-700 border border-red-200 py-2 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Удалить
+                  </button>
+                )}
               </div>
             )}
 
@@ -361,16 +450,28 @@ export default function GardenView() {
               ) : (
                 <div className="space-y-2">
                   {plants.map(p => (
-                    <div key={p.id} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl">
+                    <div key={`${p.recordType}-${p.id}`} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl">
                       <PlantImage src={p.plants?.image_url} alt={p.plants?.name || ''} className="w-10 h-10 rounded-lg object-cover" fallbackClassName="w-10 h-10 rounded-lg" compact />
-                      <div>
-                        <p className="font-medium text-sm">{p.plants?.name}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{p.plants?.name || `Растение #${p.plantId}`}</p>
                         <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
-                          <span className="flex items-center gap-0.5"><Droplets className="w-3 h-3" /> раз в {p.watering || p.plants?.watering_freq_days} дн.</span>
-                          <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" /> {p.maturation || p.plants?.maturation_days} дн.</span>
+                          <span className="flex items-center gap-0.5"><Droplets className="w-3 h-3" /> раз в {p.plants?.watering_freq_days ?? '—'} дн.</span>
+                          <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" /> {p.plants?.maturation_days ?? '—'} дн.</span>
                         </div>
                         <p className="text-[10px] text-gray-400 mt-0.5">{p.source}</p>
                       </div>
+                      {canDeleteListedPlant && (
+                        <button
+                          type="button"
+                          onClick={() => removeListedPlant(p)}
+                          disabled={removing}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg shrink-0 disabled:opacity-50"
+                          title="Удалить с участка"
+                          aria-label={`Удалить ${p.plants?.name || 'растение'}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -1,16 +1,26 @@
 -- =============================================================================
--- Мой огород — полная схема БД для НОВОГО проекта Supabase
+-- Мой огород — ПОЛНЫЙ скрипт базы данных (PostgreSQL / Supabase)
+-- Файл: supabase/complete_database.sql
 -- =============================================================================
--- Как использовать:
---   1. Создайте новый проект в https://supabase.com
---   2. Dashboard → SQL Editor → вставьте этот файл целиком → Run
---   3. Authentication → Providers → включите Email
---   4. В .env приложения укажите новые VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY
---   5. Зарегистрируйтесь в приложении, затем назначьте себя админом:
+-- Содержит: таблицы, индексы, функции, триггеры, RLS, GRANT, Storage.
+--
+-- Таблицы:
+--   roles, plant_categories, plants, plant_varieties, plant_companions,
+--   fertilizers, plant_issues, profiles, layouts, beds, bed_elements,
+--   pots, plants_on_beds, garden_journal, reminders, push_subscriptions,
+--   user_plants, plant_submissions, plant_favorites
+--
+-- Storage buckets: garden-photos, plant-images, avatars
+--
+-- Как использовать (новый проект Supabase):
+--   1. https://supabase.com → New project
+--   2. SQL Editor → вставьте этот файл целиком → Run
+--   3. Authentication → Providers → Email (включить)
+--   4. В .env: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+--   5. Зарегистрируйтесь в приложении, назначьте админа:
 --        update public.profiles set role_id = 2 where email = 'ваш@email.com';
 --
--- Внимание: скрипт для ПУСТОЙ БД. На существующей БД часть шагов может
--- конфликтовать — используйте отдельные файлы из supabase/*.sql.
+-- Для УЖЕ существующей БД используйте отдельные миграции из supabase/*.sql
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -117,7 +127,11 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   city text,
-  is_blocked boolean default false
+  is_blocked boolean default false,
+  email_notifications_enabled boolean not null default false,
+  lunar_enabled boolean not null default true,
+  weather_alerts_enabled boolean not null default true,
+  last_email_digest_sent_at timestamptz
 );
 
 -- -----------------------------------------------------------------------------
@@ -295,6 +309,17 @@ alter table public.garden_journal
   add column if not exists user_plant_id uuid references public.user_plants (id) on delete set null;
 
 -- -----------------------------------------------------------------------------
+-- 6b. Избранное в каталоге
+-- -----------------------------------------------------------------------------
+create table if not exists public.plant_favorites (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  plant_id bigint not null references public.plants (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (user_id, plant_id)
+);
+
+-- -----------------------------------------------------------------------------
 -- 7. Индексы
 -- -----------------------------------------------------------------------------
 create index if not exists idx_profiles_role_id on public.profiles (role_id);
@@ -315,6 +340,9 @@ create index if not exists idx_garden_journal_user_id on public.garden_journal (
 create index if not exists idx_plants_category_id on public.plants (category_id);
 create index if not exists idx_user_plants_user_id on public.user_plants (user_id);
 create index if not exists idx_plant_submissions_user_status on public.plant_submissions (user_id, status);
+create index if not exists idx_plant_submissions_pending on public.plant_submissions (status) where status = 'pending';
+create index if not exists idx_plant_favorites_user on public.plant_favorites (user_id);
+create index if not exists idx_plant_favorites_plant on public.plant_favorites (plant_id);
 
 -- -----------------------------------------------------------------------------
 -- 8. Функции и триггеры
@@ -407,6 +435,7 @@ alter table public.fertilizers enable row level security;
 alter table public.plant_issues enable row level security;
 alter table public.user_plants enable row level security;
 alter table public.plant_submissions enable row level security;
+alter table public.plant_favorites enable row level security;
 
 -- profiles
 drop policy if exists profiles_select_own_or_admin on public.profiles;
@@ -628,6 +657,19 @@ drop policy if exists plant_submissions_admin_update on public.plant_submissions
 create policy plant_submissions_admin_update on public.plant_submissions
   for update to authenticated using (public.is_admin(auth.uid()));
 
+-- plant_favorites
+drop policy if exists plant_favorites_select_own on public.plant_favorites;
+create policy plant_favorites_select_own on public.plant_favorites
+  for select to authenticated using (user_id = auth.uid());
+
+drop policy if exists plant_favorites_insert_own on public.plant_favorites;
+create policy plant_favorites_insert_own on public.plant_favorites
+  for insert to authenticated with check (user_id = auth.uid());
+
+drop policy if exists plant_favorites_delete_own on public.plant_favorites;
+create policy plant_favorites_delete_own on public.plant_favorites
+  for delete to authenticated using (user_id = auth.uid());
+
 -- -----------------------------------------------------------------------------
 -- 10. Права (GRANT)
 -- -----------------------------------------------------------------------------
@@ -651,35 +693,32 @@ grant select, insert, update, delete on table public.fertilizers to authenticate
 grant select, insert, update, delete on table public.plant_issues to authenticated;
 grant select, insert, update, delete on table public.user_plants to authenticated;
 grant select, insert, update on table public.plant_submissions to authenticated;
+grant select, insert, delete on table public.plant_favorites to authenticated;
 
 -- -----------------------------------------------------------------------------
--- 11. Storage (фото участков и растений)
+-- 11. Storage (фото участков, растений, аватары)
+-- allowed_mime_types = null — иначе браузер может слать application/octet-stream
 -- -----------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'garden-photos',
-  'garden-photos',
-  true,
-  5242880,
-  array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-)
+values ('garden-photos', 'garden-photos', true, 5242880, null)
 on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
+  public = true,
+  file_size_limit = 5242880,
+  allowed_mime_types = null;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'plant-images',
-  'plant-images',
-  true,
-  5242880,
-  array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-)
+values ('plant-images', 'plant-images', true, 5242880, null)
 on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
+  public = true,
+  file_size_limit = 5242880,
+  allowed_mime_types = null;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 2097152, null)
+on conflict (id) do update set
+  public = true,
+  file_size_limit = 2097152,
+  allowed_mime_types = null;
 
 drop policy if exists garden_photos_public_read on storage.objects;
 create policy garden_photos_public_read on storage.objects
@@ -712,6 +751,34 @@ create policy plant_images_auth_update on storage.objects
 drop policy if exists plant_images_auth_delete on storage.objects;
 create policy plant_images_auth_delete on storage.objects
   for delete to authenticated using (bucket_id = 'plant-images');
+
+drop policy if exists avatars_public_read on storage.objects;
+create policy avatars_public_read on storage.objects
+  for select to public using (bucket_id = 'avatars');
+
+drop policy if exists avatars_auth_insert on storage.objects;
+create policy avatars_auth_insert on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists avatars_auth_update on storage.objects;
+create policy avatars_auth_update on storage.objects
+  for update to authenticated
+  using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists avatars_auth_delete on storage.objects;
+create policy avatars_auth_delete on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
 
 -- -----------------------------------------------------------------------------
 -- 12. Начальные категории (опционально)

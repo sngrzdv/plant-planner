@@ -14,7 +14,7 @@ import { toast } from '../store/toastStore'
 import { confirm } from '../store/confirmStore'
 import { plantingMethodLabel } from '../lib/plantLabels'
 
-const ADMIN_RLS_SQL = 'supabase/fix_admin_category_insert.sql'
+const ADMIN_RLS_SQL = 'supabase/complete_database.sql'
 import { uploadPlantImage, deletePlantImage } from '../services/plantImageStorage'
 import { resolvePlantImageUrl } from '../lib/plantImageUrl'
 import {

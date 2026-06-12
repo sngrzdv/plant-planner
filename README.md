@@ -4,6 +4,8 @@
 
 **Production:** https://plant-planner-nu.vercel.app
 
+**Обзор сайта для ИИ (без входа):** https://plant-planner-nu.vercel.app/guide
+
 ## Быстрый старт
 
 ```bash
@@ -24,17 +26,9 @@ npm run dev
 
 > Если `.env` раньше попадал в Git — ротируйте ключи Supabase в дашборде.
 
-## SQL-миграции (Supabase → SQL Editor)
+## База данных (Supabase → SQL Editor)
 
-Выполните по порядку при первом развёртывании:
-
-1. `supabase/full_schema.sql` — базовая схема (если проект пустой)
-2. `supabase/fix_storage_upload.sql` — storage для фото растений и участков
-3. `supabase/user_plants_and_submissions.sql` — личный дневник и заявки
-4. `supabase/plant_favorites_and_profile_extensions.sql` — **избранное, аватар, email-настройки, синхронизация prefs**
-5. `supabase/fix_admin_category_insert.sql` — права админа на каталог
-
-Дополнительно при необходимости: `fix_broken_image_urls.sql`, `reminders_rls.sql`, `admin_catalog_rls.sql`.
+Для **нового** проекта выполните один файл: `supabase/complete_database.sql` (см. `supabase/README.md`).
 
 Назначить админа:
 

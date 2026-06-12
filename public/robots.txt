@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Allow: /guide
+Allow: /login
+Allow: /register
+Allow: /terms
+Allow: /privacy
+
+Sitemap: https://plant-planner-nu.vercel.app/guide

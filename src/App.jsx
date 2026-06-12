@@ -22,6 +22,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import ResetPassword from './pages/ResetPassword'
 import LegalPage from './pages/LegalPage'
+import SiteGuide from './pages/SiteGuide'
 import MobileNav from './components/MobileNav'
 import ToastContainer from './components/ToastContainer'
 import ConfirmDialog from './components/ConfirmDialog'
@@ -101,9 +102,6 @@ function App() {
 
     const syncSession = async (session, { blockUi = true } = {}) => {
       if (!session?.user) {
-        // #region agent log
-        fetch('http://127.0.0.1:7306/ingest/01b5f2e3-a8e2-4dff-baac-b45fa1c4403f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'09a756'},body:JSON.stringify({sessionId:'09a756',location:'App.jsx:syncSession',message:'No session',data:{blockUi},timestamp:Date.now(),runId:'audit-v1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         setUser(null)
         setProfile(null)
         setLoading(false)
@@ -116,9 +114,6 @@ function App() {
       }
 
       const profile = await loadProfile(session.user.id)
-      // #region agent log
-      fetch('http://127.0.0.1:7306/ingest/01b5f2e3-a8e2-4dff-baac-b45fa1c4403f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'09a756'},body:JSON.stringify({sessionId:'09a756',location:'App.jsx:syncSession',message:'Profile loaded',data:{hasProfile:Boolean(profile),isBlocked:Boolean(profile?.is_blocked),roleId:profile?.role_id},timestamp:Date.now(),runId:'audit-v1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       if (profile?.is_blocked) {
         await supabase.auth.signOut()
         setUser(null)
@@ -157,6 +152,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/guide" element={<SiteGuide />} />
         <Route path="/terms" element={<LegalPage doc="terms" />} />
         <Route path="/privacy" element={<LegalPage doc="privacy" />} />
         <Route path="/reset-password" element={<ResetPassword />} />
@@ -243,9 +239,6 @@ function Dashboard() {
       setTodayTasks(pickTodayTasks(pending, today))
       setPendingReminders(pending)
       setLoadingTasks(false)
-      // #region agent log
-      fetch('http://127.0.0.1:7306/ingest/01b5f2e3-a8e2-4dff-baac-b45fa1c4403f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'09a756'},body:JSON.stringify({sessionId:'09a756',location:'App.jsx:loadDashboard',message:'Dashboard loaded',data:{weatherOk:Boolean(weatherData),gardens:gardens||0,pots:pots||0,pendingCount:pending.length,todayCount:pickTodayTasks(pending,today).length,catalog:catalogPlants||0},timestamp:Date.now(),runId:'audit-v1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
     }
 
     loadDashboard()

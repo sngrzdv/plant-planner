@@ -1,9 +1,28 @@
 import { supabase } from '../lib/supabase'
 
 const CELL_SIZE = 50
+const CELL_OCCUPY_TOLERANCE = 20
 
 function snapCoord(value) {
   return Math.round(Number(value) || 0)
+}
+
+/** Занята ли клетка на грядке (по данным bed_elements). */
+export async function isGridCellOccupied(bedId, cellX, cellY) {
+  const targetX = snapCoord(cellX)
+  const targetY = snapCoord(cellY)
+  const { data, error } = await supabase
+    .from('bed_elements')
+    .select('id, pos_x, pos_y')
+    .eq('bed_id', bedId)
+    .eq('type', 'plant_spot')
+
+  if (error) throw error
+  return (data || []).some(
+    (spot) =>
+      Math.abs(spot.pos_x - (targetX + 4)) < CELL_OCCUPY_TOLERANCE &&
+      Math.abs(spot.pos_y - (targetY + 4)) < CELL_OCCUPY_TOLERANCE,
+  )
 }
 
 /** ID грядок пользователя (через layouts). */
@@ -26,6 +45,10 @@ export async function plantInBedGrid(bedId, plant, { cellX, cellY, plantedYear }
   const today = new Date().toISOString().split('T')[0]
   const x = snapCoord(cellX) + 4
   const y = snapCoord(cellY) + 4
+
+  if (await isGridCellOccupied(bedId, cellX, cellY)) {
+    throw new Error('Эта клетка уже занята')
+  }
 
   const { data: element, error: elementError } = await supabase
     .from('bed_elements')
@@ -72,7 +95,7 @@ export async function removeGridPlanting(bedElementId, bedId, plantId) {
     .select('id')
     .eq('bed_id', bedId)
     .eq('plant_id', plantId)
-    .eq('source_type', 'seedling_direct')
+    .in('source_type', ['seedling_direct', 'pot'])
     .limit(1)
 
   if (onBedRows?.[0]) {

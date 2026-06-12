@@ -6,7 +6,7 @@ import { toast } from '../store/toastStore'
 import { formatSupabaseError } from '../lib/formatSupabaseError'
 import { confirm } from '../store/confirmStore'
 
-const USER_PLANTS_SQL = 'supabase/user_plants_and_submissions.sql'
+const USER_PLANTS_SQL = 'supabase/complete_database.sql'
 import { uploadPlantImage } from '../services/plantImageStorage'
 import PlantImage from './PlantImage'
 import {
